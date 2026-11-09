@@ -11,6 +11,7 @@ from apiflask.fields import Email, Integer, String
 from apiflask.validators import Length, Range
 
 from auth import auth, check_login, create_token
+from api.borger_api import api as borger_api
 from api.kontaktperson_api import KontaktpersonOut, api as kontaktperson_api
 from api.medicinplan_api import api as medicinplan_api
 from api.medicinudlevering_api import api as medicinudlevering_api
@@ -21,6 +22,7 @@ logger = logging.getLogger(__name__)
 app = APIFlask(__name__, title="PillPilot API")
 app.json.ensure_ascii = False
 app.register_blueprint(kontaktperson_api)
+app.register_blueprint(borger_api)
 app.register_blueprint(medicinplan_api)
 app.register_blueprint(medicinudlevering_api)
 app.register_blueprint(pilledispenser_api)
