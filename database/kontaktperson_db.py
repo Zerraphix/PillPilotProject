@@ -4,7 +4,26 @@ from werkzeug.security import generate_password_hash
 
 from db import get_connection
 
+def all_kontaktpersoner() -> list[dict]:
+    """Hent alle kontaktpersoner uden password-hash, også inaktive."""
+    with get_connection() as conn:
+        return conn.execute("""
+            SELECT kontaktperson_id, fornavn, efternavn, email, telefon, aktiv, oprettet_at
+            FROM public.kontaktperson
+            ORDER BY kontaktperson_id
+        """).fetchall()
 
+
+def get_kontaktperson(kontaktperson_id: int) -> dict | None:
+    """Hent én kontaktperson uden password-hash."""
+    with get_connection() as conn:
+        return conn.execute(t"""
+            SELECT kontaktperson_id, fornavn, efternavn, email, telefon, aktiv, oprettet_at
+            FROM public.kontaktperson
+            WHERE kontaktperson_id = {kontaktperson_id}
+        """).fetchone()
+        
+        
 def get_login_kontaktperson(email: str | None, kontaktperson_id: int | None) -> dict | None:
     """Hent hash til login med enten email eller id. Må ikke sendes som API-svar."""
     with get_connection() as conn:
