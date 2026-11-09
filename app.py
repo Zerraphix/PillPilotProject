@@ -12,12 +12,14 @@ from apiflask.validators import Length, Range
 
 from auth import auth, check_login, create_token
 from api.kontaktperson_api import KontaktpersonOut, api as kontaktperson_api
+from api.pilledispenser_api import api as pilledispenser_api
 from api.udleveringsstatus_api import api as udleveringsstatus_api
 
 logger = logging.getLogger(__name__)
 app = APIFlask(__name__, title="PillPilot API")
 app.json.ensure_ascii = False
 app.register_blueprint(kontaktperson_api)
+app.register_blueprint(pilledispenser_api)
 app.register_blueprint(udleveringsstatus_api)
 
 
