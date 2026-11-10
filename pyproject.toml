@@ -9,6 +9,11 @@ dependencies = [
     "joserfc>=1.7.4,<2",
     "Werkzeug>=3.1,<4",
     "click>=8.1,<9",
+    "flask>=3.1,<4",
+    "requests>=2.32,<3",
+    "flask-session>=0.8,<0.9",
+    "cachelib>=0.13,<0.14",
+    "flask-wtf>=1.2,<2",
 ]
 
 [tool.uv]
