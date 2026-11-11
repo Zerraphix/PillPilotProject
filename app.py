@@ -160,7 +160,7 @@ def me() -> dict:
 @app.doc(hide=True)
 def home():
     if is_logged_in():
-        return redirect(url_for("test_page"))
+        return redirect(url_for("dashboard"))
     return redirect(url_for("login"))
 
 
@@ -168,7 +168,7 @@ def home():
 @app.doc(hide=True)
 def login():
     if is_logged_in():
-        return redirect(url_for("test_page"))
+        return redirect(url_for("dashboard"))
 
     email = ""
     if request.method == "POST":
@@ -239,7 +239,7 @@ def login():
             session["aktiv"] = data["aktiv"]
             app.session_interface.regenerate(session)
 
-            return redirect(url_for("test_page"))
+            return redirect(url_for("dashboard"))
 
         except ValueError:
             flash("API'en gav et uventet svar. Prøv igen om lidt.", "danger")
@@ -249,11 +249,36 @@ def login():
     return render_template("login.html", email=email)
 
 
-@app.route("/test")
+@app.route("/dashboard")
 @app.doc(hide=True)
 @login_required
-def test_page():
-    return render_template("test.html")
+def dashboard():
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/borger",
+            headers={"Authorization": f"Bearer {session['token']}"},
+            params={"kontaktperson_id": session["kontaktperson_id"]},
+            timeout=5,
+            allow_redirects=False,
+        )
+    except requests.RequestException:
+        return render_template("error.html", message="Kan ikke kontakte API'en. Prøv igen om lidt."), 503
+
+    if response.status_code == 401:
+        session.clear()
+        flash("Dit login er udløbet eller ikke længere gyldigt. Log ind igen.", "warning")
+        return redirect(url_for("login"))
+    if response.status_code != 200:
+        return render_template("error.html", message="Kunne ikke hente dine borgere. Prøv igen om lidt."), 502
+
+    try:
+        borgere = response.json()
+    except ValueError:
+        return render_template("error.html", message="API'en gav et ugyldigt svar. Prøv igen om lidt."), 502
+    if not isinstance(borgere, list):
+        return render_template("error.html", message="API'en gav et uventet svar. Prøv igen om lidt."), 502
+
+    return render_template("dashboard.html", borgere=borgere)
 
 
 @app.route("/logout", methods=["POST"])

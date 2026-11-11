@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · PillPilot{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center gap-3 mb-4">
+    <h1 class="h3 mb-0">Dashboard</h1>
+    <a href="{{ url_for('dashboard') }}" class="btn btn-outline-primary">Opdater</a>
+</div>
+
+<section class="card mb-4" aria-labelledby="kontaktperson-heading">
+    <div class="card-body">
+        <h2 class="h5 mb-3" id="kontaktperson-heading">Dine kontaktoplysninger</h2>
+        <dl class="row mb-0">
+            <dt class="col-sm-3">Kontaktperson-id</dt>
+            <dd class="col-sm-9">{{ session.get('kontaktperson_id') }}</dd>
+            <dt class="col-sm-3">Navn</dt>
+            <dd class="col-sm-9">{{ session.get('fornavn') }} {{ session.get('efternavn') }}</dd>
+            <dt class="col-sm-3">Email</dt>
+            <dd class="col-sm-9 text-break">{{ session.get('email') }}</dd>
+            <dt class="col-sm-3">Telefon</dt>
+            <dd class="col-sm-9">{{ session.get('telefon') or 'Ikke angivet' }}</dd>
+            <dt class="col-sm-3">Aktiv</dt>
+            <dd class="col-sm-9">{{ 'Ja' if session.get('aktiv') else 'Nej' }}</dd>
+        </dl>
+    </div>
+</section>
+
+<section class="card" aria-labelledby="borgere-heading">
+    <div class="card-body">
+        <h2 class="h5 mb-3" id="borgere-heading">Dine tilknyttede borgere ({{ borgere|length }})</h2>
+
+        {% if borgere %}
+        <div class="table-responsive">
+            <table class="table table-striped align-middle mb-0" aria-labelledby="borgere-heading">
+                <thead>
+                    <tr>
+                        <th scope="col">Borger-id</th>
+                        <th scope="col">Navn</th>
+                        <th scope="col">Telefon</th>
+                        <th scope="col">Aktiv</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for borger in borgere %}
+                    <tr>
+                        <td>{{ borger.borger_id }}</td>
+                        <td>{{ borger.fornavn }} {{ borger.efternavn }}</td>
+                        <td>{{ borger.telefon or 'Ikke angivet' }}</td>
+                        <td>{{ 'Ja' if borger.aktiv else 'Nej' }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-secondary mb-0">Der er endnu ingen borgere tilknyttet dig.</p>
+        {% endif %}
+    </div>
+</section>
+{% endblock %}
