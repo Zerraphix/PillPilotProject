@@ -1,31 +1,30 @@
 from machine import Pin
 from time import sleep_ms
 
-# Initialiser sensoren
-def hall_init(gpio=32):
+
+# Start Hall-sensoren
+
+def hall_init(gpio=27):
     return Pin(gpio, Pin.IN, Pin.PULL_UP)
 
-# Læs sensoren
+
+# Laes signalet
+
 def hall_read(sensor):
-    return sensor.value(
-    )
+    return sensor.value()
 
-# Tjek om der er et magnetfelt til stede
+
+# Registrer magneten
+
 def hall_detected(sensor):
-    return sensor.value() == 0
+    return hall_read(sensor) == 0
 
 
-# Bekræft magnetregistrering
-def hall_debounce(sensor, delay=50):
-    if hall_detected(sensor):
-        return False
+# Kontroller at signalet er stabilt
 
-    sleep_ms(delay)
-    return hall_detected(sensor)
-
-# Hent sensorens status
-def hall_status(sensor):
-    return {
-        "signal" : hall_read(sensor),
-        "magnetic_field_detected" : hall_detected(sensor)
-    }
+def hall_stable(sensor, delay_ms=30):
+    first = hall_detected(sensor)
+    sleep_ms(delay_ms)
+    if hall_detected(sensor) == first:
+        return first
+    return None
