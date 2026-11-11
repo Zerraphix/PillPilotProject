@@ -21,7 +21,7 @@ EXPECTED_COLUMNS = {
         "telefon", "aktiv", "oprettet_at",
     ),
     "borger": (
-        "borger_id", "kontaktperson_id", "fornavn", "efternavn", "telefon",
+        "borger_id", "kontaktperson_id", "fornavn", "efternavn", "birthday", "telefon", "adresse", "diagnose", "allergi",
         "aktiv", "oprettet_at",
     ),
     "pilledispenser": (
