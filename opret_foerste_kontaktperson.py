@@ -5,10 +5,10 @@ Derefter oprettes alle nye kontaktpersoner med POST /api/kontaktperson.
 Filen sletter ingen data og indeholder ingen faste passwords.
 """
 
-import re
 from getpass import getpass
 
 from database import kontaktperson_db
+from password_validation import PASSWORD_ERROR, validate_password
 
 
 def main() -> None:
@@ -20,15 +20,19 @@ def main() -> None:
     efternavn = input("Efternavn: ").strip()
     email = input("Email: ").strip()
     telefon = input("Telefon, valgfri: ").strip() or None
-    password = getpass("Password, mindst 12 tegn: ")
+    print(PASSWORD_ERROR)
+    password = getpass("Password: ")
     gentaget = getpass("Gentag password: ")
-
-    if not fornavn or not efternavn or not re.fullmatch(r"[\w%+-]+(?:\.[\w%+-]+)*@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}", email):
-        print("Udfyld navn og en gyldig email-adresse (f.eks. navn@email.com).")
+    if not fornavn or not efternavn or "@" not in email:
+        print("Udfyld navn og en email-adresse.")
         return
-
-    if not 12 <= len(password) <= 128 or password != gentaget:
-        print("Password skal være 12-128 tegn og ens begge gange.")
+    if password != gentaget:
+        print("Password skal være ens begge gange.")
+        return
+    try:
+        validate_password(password)
+    except ValueError as error:
+        print(error)
         return
     kontaktperson_id = kontaktperson_db.create_kontaktperson(fornavn, efternavn, email, password, telefon)
     print(f"Kontaktperson {kontaktperson_id} er oprettet. Log ind i Swagger på /docs.")
