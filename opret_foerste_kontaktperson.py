@@ -5,6 +5,7 @@ Derefter oprettes alle nye kontaktpersoner med POST /api/kontaktperson.
 Filen sletter ingen data og indeholder ingen faste passwords.
 """
 
+import re
 from getpass import getpass
 
 from database import kontaktperson_db
@@ -21,9 +22,11 @@ def main() -> None:
     telefon = input("Telefon, valgfri: ").strip() or None
     password = getpass("Password, mindst 12 tegn: ")
     gentaget = getpass("Gentag password: ")
-    if not fornavn or not efternavn or "@" not in email:
-        print("Udfyld navn og en email-adresse.")
+
+    if not fornavn or not efternavn or not re.fullmatch(r"[\w%+-]+(?:\.[\w%+-]+)*@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}", email):
+        print("Udfyld navn og en gyldig email-adresse (f.eks. navn@email.com).")
         return
+
     if not 12 <= len(password) <= 128 or password != gentaget:
         print("Password skal være 12-128 tegn og ens begge gange.")
         return
