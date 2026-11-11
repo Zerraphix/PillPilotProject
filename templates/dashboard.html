@@ -9,7 +9,15 @@
 
 <section class="card mb-4" aria-labelledby="kontaktperson-heading">
     <div class="card-body">
-        <h2 class="h5 mb-3" id="kontaktperson-heading">Dine kontaktoplysninger</h2>
+        <div class="d-flex justify-content-between align-items-start gap-3 mb-3">
+            <h2 class="h5 mb-0" id="kontaktperson-heading">Dine kontaktoplysninger</h2>
+            <button class="btn btn-outline-secondary" type="button"
+                    data-bs-toggle="collapse" data-bs-target="#userSettings"
+                    aria-expanded="{{ 'true' if password_settings_open else 'false' }}"
+                    aria-controls="userSettings">
+                Indstillinger
+            </button>
+        </div>
         <dl class="row mb-0">
             <dt class="col-sm-3">Kontaktperson-id</dt>
             <dd class="col-sm-9">{{ session.get('kontaktperson_id') }}</dd>
@@ -22,6 +30,27 @@
             <dt class="col-sm-3">Aktiv</dt>
             <dd class="col-sm-9">{{ 'Ja' if session.get('aktiv') else 'Nej' }}</dd>
         </dl>
+
+        <div class="collapse mt-4{% if password_settings_open %} show{% endif %}" id="userSettings">
+            <hr>
+            <div class="row g-4">
+                <div class="col-12 col-lg-6">
+                    <h3 class="h5 mb-3">Skift adgangskode</h3>
+                    <form method="post" action="{{ url_for('update_password') }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <div class="mb-3">
+                            <label for="new-password" class="form-label">Ny adgangskode</label>
+                            <input type="password" id="new-password" name="password" class="form-control"
+                                   autocomplete="new-password" minlength="{{ password_min_length }}"
+                                   maxlength="{{ password_max_length }}" pattern="{{ password_pattern }}"
+                                   title="{{ password_error }}" aria-describedby="password-help" required>
+                            <div class="form-text" id="password-help">{{ password_error }}</div>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Opdater adgangskode</button>
+                    </form>
+                </div>
+            </div>
+        </div>
     </div>
 </section>
 

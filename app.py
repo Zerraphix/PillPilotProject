@@ -27,6 +27,13 @@ from api.medicinplan_api import api as medicinplan_api
 from api.medicinudlevering_api import api as medicinudlevering_api
 from api.pilledispenser_api import api as pilledispenser_api
 from api.udleveringsstatus_api import api as udleveringsstatus_api
+from password_validation import (
+    PASSWORD_ERROR,
+    PASSWORD_MAX_LENGTH,
+    PASSWORD_MIN_LENGTH,
+    PASSWORD_PATTERN,
+    validate_password,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -126,7 +133,7 @@ class LoginIn(Schema):
     """Angiv password og enten email eller kontaktperson_id, ikke begge."""
     email = Email(load_default=None, allow_none=True, validate=Length(max=250))
     kontaktperson_id = Integer(load_default=None, allow_none=True, validate=Range(min=1))
-    password = String(required=True, validate=Length(min=1, max=128), load_only=True)
+    password = String(required=True, validate=Length(min=1, max=PASSWORD_MAX_LENGTH), load_only=True)
 
 
 class TokenOut(Schema):
@@ -178,7 +185,7 @@ def login():
         if not email or not password:
             flash("Udfyld både email og adgangskode.", "warning")
             return render_template("login.html", email=email)
-        if len(email) > 250 or len(password) > 128:
+        if len(email) > 250 or len(password) > PASSWORD_MAX_LENGTH:
             flash("Email eller adgangskode er for lang.", "warning")
             return render_template("login.html", email=email)
 
@@ -278,7 +285,54 @@ def dashboard():
     if not isinstance(borgere, list):
         return render_template("error.html", message="API'en gav et uventet svar. Prøv igen om lidt."), 502
 
-    return render_template("dashboard.html", borgere=borgere)
+    return render_template(
+        "dashboard.html",
+        borgere=borgere,
+        password_pattern=PASSWORD_PATTERN,
+        password_error=PASSWORD_ERROR,
+        password_min_length=PASSWORD_MIN_LENGTH,
+        password_max_length=PASSWORD_MAX_LENGTH,
+        password_settings_open=request.args.get("settings") == "password",
+    )
+
+
+@app.route("/settings/password", methods=["POST"])
+@app.doc(hide=True)
+@login_required
+def update_password():
+    """Skift den indloggede kontaktpersons password gennem API'et."""
+    password = request.form.get("password", "")
+    try:
+        validate_password(password)
+    except ValueError as error:
+        flash(str(error), "warning")
+        return redirect(url_for("dashboard", settings="password"))
+
+    try:
+        response = requests.patch(
+            f"{API_BASE_URL}/kontaktperson/{session['kontaktperson_id']}/password",
+            headers={"Authorization": f"Bearer {session['token']}"},
+            json={"password": password},
+            timeout=5,
+            allow_redirects=False,
+        )
+    except requests.RequestException:
+        flash("Kan ikke kontakte API'en. Prøv igen om lidt.", "danger")
+        return redirect(url_for("dashboard", settings="password"))
+
+    if response.status_code == 401:
+        session.clear()
+        flash("Dit login er udløbet eller ikke længere gyldigt. Log ind igen.", "warning")
+        return redirect(url_for("login"))
+    if response.status_code in (400, 422):
+        flash(PASSWORD_ERROR, "warning")
+        return redirect(url_for("dashboard", settings="password"))
+    if response.status_code != 200:
+        flash("Adgangskoden kunne ikke opdateres. Prøv igen om lidt.", "danger")
+        return redirect(url_for("dashboard", settings="password"))
+
+    flash("Din adgangskode er opdateret.", "success")
+    return redirect(url_for("dashboard"))
 
 
 @app.route("/logout", methods=["POST"])
