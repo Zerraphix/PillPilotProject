@@ -419,10 +419,23 @@ def borger_view(borger_id):
             timeout=5,
             allow_redirects=False,
         )
+        kontaktperson_response = requests.get(
+            f"{API_BASE_URL}/kontaktperson",
+            headers={"Authorization": f"Bearer {session['token']}"},
+            timeout=5,
+            allow_redirects=False,
+        )
+        medicinplan_response = requests.get(
+            f"{API_BASE_URL}/medicinplan",
+            headers={"Authorization": f"Bearer {session['token']}"},
+            params={"borger_id": borger_id},
+            timeout=5,
+            allow_redirects=False,
+        )
     except requests.RequestException:
         return render_template("error.html", message="Kan ikke kontakte API'en. Prøv igen om lidt."), 503
 
-    if response.status_code == 401:
+    if 401 in (response.status_code, kontaktperson_response.status_code, medicinplan_response.status_code):
         session.clear()
         flash("Dit login er udløbet eller ikke længere gyldigt. Log ind igen.", "warning")
         return redirect(url_for("login"))
@@ -430,16 +443,229 @@ def borger_view(borger_id):
         return render_template("error.html", message="Borgeren findes ikke."), 404
     if response.status_code != 200:
         return render_template("error.html", message="Kunne ikke hente borgeren. Prøv igen om lidt."), 502
+    if kontaktperson_response.status_code != 200:
+        return render_template("error.html", message="Kunne ikke hente kontaktpersoner. Prøv igen om lidt."), 502
+    if medicinplan_response.status_code != 200:
+        return render_template("error.html", message="Kunne ikke hente medicinplaner. Prøv igen om lidt."), 502
 
     try:
         borger = response.json()
+        kontaktpersoner = kontaktperson_response.json()
+        medicinplaner = medicinplan_response.json()
     except ValueError:
         return render_template("error.html", message="API'en gav et ugyldigt svar. Prøv igen om lidt."), 502
     required_fields = {"borger_id", "fornavn", "efternavn", "aktiv"}
     if not isinstance(borger, dict) or not required_fields.issubset(borger) or borger["borger_id"] != borger_id:
         return render_template("error.html", message="API'en gav et uventet svar. Prøv igen om lidt."), 502
+    if not isinstance(kontaktpersoner, list) or not isinstance(medicinplaner, list):
+        return render_template("error.html", message="API'en gav et uventet svar. Prøv igen om lidt."), 502
 
-    return render_template("borger.html", borger=borger)
+    edit_medicinplan_id = request.args.get("edit_medicinplan_id", type=int)
+    medicinplan_id = request.args.get("medicinplan_id", type=int)
+    if edit_medicinplan_id is not None:
+        medicinplan_id = edit_medicinplan_id
+
+    medicinplan = None
+    for plan in medicinplaner:
+        if not isinstance(plan, dict) or plan.get("borger_id") != borger_id:
+            return render_template("error.html", message="API'en gav et uventet svar. Prøv igen om lidt."), 502
+        if medicinplan_id is not None and plan.get("medicinplan_id") == medicinplan_id:
+            medicinplan = plan
+
+    if medicinplan_id is not None and medicinplan is None:
+        flash("Medicinplanen findes ikke på denne borger.", "warning")
+        return redirect(url_for("borger_view", borger_id=borger_id))
+
+    if medicinplan is None:
+        for plan in reversed(medicinplaner):
+            if plan.get("aktiv"):
+                medicinplan = plan
+                break
+        if medicinplan is None and medicinplaner:
+            medicinplan = medicinplaner[-1]
+
+    return render_template(
+        "borger.html",
+        borger=borger,
+        kontaktpersoner=kontaktpersoner,
+        borger_settings_open=request.args.get("settings") == "borger",
+        medicinplaner=medicinplaner,
+        medicinplan=medicinplan,
+        edit_medicinplan=medicinplan if edit_medicinplan_id is not None else None,
+    )
+
+
+@app.route("/borger/<int:borger_id>/update", methods=["POST"])
+@app.doc(hide=True)
+@login_required
+def update_borger(borger_id):
+    """Gem borgerens oplysninger gennem API'et."""
+    settings_url = url_for("borger_view", borger_id=borger_id, settings="borger")
+
+    try:
+        response = requests.put(
+            f"{API_BASE_URL}/borger/{borger_id}",
+            headers={"Authorization": f"Bearer {session['token']}"},
+            json={
+                "kontaktperson_id": request.form.get("kontaktperson_id", type=int),
+                "fornavn": request.form.get("fornavn", "").strip(),
+                "efternavn": request.form.get("efternavn", "").strip(),
+                "birthday": request.form.get("birthday", ""),
+                "telefon": request.form.get("telefon", "").strip() or None,
+                "adresse": request.form.get("adresse", "").strip() or None,
+                "diagnose": request.form.get("diagnose", "").strip() or None,
+                "allergi": request.form.get("allergi", "").strip() or None,
+                "aktiv": request.form.get("aktiv") == "true",
+            },
+            timeout=5,
+            allow_redirects=False,
+        )
+    except requests.RequestException:
+        flash("Kan ikke kontakte API'en. Kontrollér oplysningerne, før du prøver igen.", "danger")
+        return redirect(settings_url)
+
+    if response.status_code == 401:
+        session.clear()
+        flash("Dit login er udløbet eller ikke længere gyldigt. Log ind igen.", "warning")
+        return redirect(url_for("login"))
+    if response.status_code == 200:
+        flash("Borgerens oplysninger er opdateret.", "success")
+        return redirect(url_for("borger_view", borger_id=borger_id))
+    if response.status_code == 404:
+        flash("Borgeren findes ikke længere.", "warning")
+        return redirect(url_for("borgere"))
+    if response.status_code == 409:
+        flash("Den valgte kontaktperson findes ikke længere. Vælg en kontaktperson fra listen.", "warning")
+    elif response.status_code in (400, 422):
+        flash("Kontrollér formularens felter. Fornavn, efternavn, fødselsdato og kontaktperson skal være udfyldt korrekt.", "warning")
+    else:
+        flash("Borgerens oplysninger kunne ikke opdateres. Prøv igen om lidt.", "danger")
+
+    return redirect(settings_url)
+
+
+# Medicinplan routes
+@app.route("/borger/<int:borger_id>/medicinplan/create", methods=["POST"])
+@app.doc(hide=True)
+@login_required
+def create_medicinplan(borger_id):
+    """Opret en medicinplan for den viste borger."""
+    borger_url = url_for("borger_view", borger_id=borger_id)
+
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/medicinplan",
+            headers={"Authorization": f"Bearer {session['token']}"},
+            json={
+                "borger_id": borger_id,
+                "navn": request.form.get("navn", "").strip(),
+                "tidspunkt": request.form.get("tidspunkt", ""),
+                "startdato": request.form.get("startdato", ""),
+                "slutdato": request.form.get("slutdato", "").strip() or None,
+            },
+            timeout=5,
+            allow_redirects=False,
+        )
+    except requests.RequestException:
+        flash("Kan ikke kontakte API'en. Kontrollér planerne, før du prøver igen.", "danger")
+        return redirect(borger_url)
+
+    if response.status_code == 401:
+        session.clear()
+        flash("Dit login er udløbet eller ikke længere gyldigt. Log ind igen.", "warning")
+        return redirect(url_for("login"))
+    if response.status_code == 201:
+        flash("Medicinplanen er oprettet.", "success")
+    elif response.status_code in (400, 422):
+        flash("Kontrollér navn, klokkeslæt og datoer. Slutdato må ikke være før startdato.", "warning")
+    elif response.status_code == 409:
+        flash("Borgeren eller opretteren kunne ikke findes. Opdater siden og prøv igen.", "warning")
+    else:
+        flash("Medicinplanen kunne ikke oprettes. Prøv igen om lidt.", "danger")
+
+    return redirect(borger_url)
+
+
+@app.route("/borger/<int:borger_id>/medicinplan/<int:medicinplan_id>/update", methods=["POST"])
+@app.doc(hide=True)
+@login_required
+def update_medicinplan(borger_id, medicinplan_id):
+    """Opdatér en af den viste borgers medicinplaner."""
+    borger_url = url_for("borger_view", borger_id=borger_id)
+    edit_url = url_for("borger_view", borger_id=borger_id, edit_medicinplan_id=medicinplan_id)
+
+    # Kontrollér, at planen hører til borgeren på siden, før ændringerne sendes.
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/medicinplan/{medicinplan_id}",
+            headers={"Authorization": f"Bearer {session['token']}"},
+            timeout=5,
+            allow_redirects=False,
+        )
+    except requests.RequestException:
+        flash("Kan ikke kontakte API'en. Prøv igen om lidt.", "danger")
+        return redirect(edit_url)
+
+    if response.status_code == 401:
+        session.clear()
+        flash("Dit login er udløbet eller ikke længere gyldigt. Log ind igen.", "warning")
+        return redirect(url_for("login"))
+    if response.status_code == 404:
+        flash("Medicinplanen findes ikke længere.", "warning")
+        return redirect(borger_url)
+    if response.status_code != 200:
+        flash("Medicinplanen kunne ikke hentes. Prøv igen om lidt.", "danger")
+        return redirect(edit_url)
+
+    try:
+        plan = response.json()
+    except ValueError:
+        flash("API'en gav et ugyldigt svar. Prøv igen om lidt.", "danger")
+        return redirect(borger_url)
+    if not isinstance(plan, dict) or plan.get("medicinplan_id") != medicinplan_id:
+        flash("API'en gav et uventet svar. Prøv igen om lidt.", "danger")
+        return redirect(borger_url)
+    if plan.get("borger_id") != borger_id:
+        flash("Medicinplanen hører ikke til denne borger.", "warning")
+        return redirect(borger_url)
+
+    try:
+        response = requests.put(
+            f"{API_BASE_URL}/medicinplan/{medicinplan_id}",
+            headers={"Authorization": f"Bearer {session['token']}"},
+            json={
+                "borger_id": borger_id,
+                "navn": request.form.get("navn", "").strip(),
+                "tidspunkt": request.form.get("tidspunkt", ""),
+                "startdato": request.form.get("startdato", ""),
+                "slutdato": request.form.get("slutdato", "").strip() or None,
+                "aktiv": request.form.get("aktiv") == "true",
+            },
+            timeout=5,
+            allow_redirects=False,
+        )
+    except requests.RequestException:
+        flash("Kan ikke kontakte API'en. Kontrollér planen, før du prøver igen.", "danger")
+        return redirect(edit_url)
+
+    if response.status_code == 401:
+        session.clear()
+        flash("Dit login er udløbet eller ikke længere gyldigt. Log ind igen.", "warning")
+        return redirect(url_for("login"))
+    if response.status_code == 200:
+        flash("Medicinplanen er opdateret.", "success")
+        return redirect(borger_url)
+    if response.status_code == 404:
+        flash("Medicinplanen findes ikke længere.", "warning")
+        return redirect(borger_url)
+    if response.status_code in (400, 422):
+        flash("Kontrollér navn, klokkeslæt og datoer. Slutdato må ikke være før startdato.", "warning")
+    elif response.status_code == 409:
+        flash("Borgeren kunne ikke tilknyttes planen. Opdater siden og prøv igen.", "warning")
+    else:
+        flash("Medicinplanen kunne ikke opdateres. Prøv igen om lidt.", "danger")
+
+    return redirect(edit_url)
 
 
 # Pilledispenser routes

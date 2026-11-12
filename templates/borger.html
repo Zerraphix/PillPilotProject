@@ -5,9 +5,98 @@
 {% block content %}
 <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary mb-4">Tilbage til dashboard</a>
 
-<div class="mb-4">
-    <h1 class="h3 text-break">{{ borger_navn }}</h1>
-    <p class="mb-0">Aktiv: <strong>{{ 'Ja' if borger.aktiv is sameas true else 'Nej' if borger.aktiv is sameas false else 'Ikke angivet' }}</strong></p>
+<div class="d-flex justify-content-between align-items-start flex-wrap gap-3 mb-4">
+    <div>
+        <h1 class="h3 text-break">{{ borger_navn }}</h1>
+        <p class="mb-0">Aktiv: <strong>{{ 'Ja' if borger.aktiv is sameas true else 'Nej' if borger.aktiv is sameas false else 'Ikke angivet' }}</strong></p>
+    </div>
+    <button class="btn btn-outline-secondary" type="button"
+            data-bs-toggle="collapse" data-bs-target="#borgerSettings"
+            aria-expanded="{{ 'true' if borger_settings_open else 'false' }}"
+            aria-controls="borgerSettings">
+        Indstillinger
+    </button>
+</div>
+
+<div class="collapse mb-4{% if borger_settings_open %} show{% endif %}" id="borgerSettings">
+    <section class="card" aria-labelledby="borger-settings-heading">
+        <div class="card-body">
+            <h2 class="h5 mb-3" id="borger-settings-heading">Rediger borger</h2>
+            <form method="POST" action="{{ url_for('update_borger', borger_id=borger.borger_id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+                <div class="row g-3">
+                    <div class="col-12 col-md-6">
+                        <label for="borger-fornavn" class="form-label">Fornavn</label>
+                        <input type="text" name="fornavn" id="borger-fornavn" class="form-control"
+                               value="{{ borger.fornavn or '' }}" maxlength="100" required>
+                    </div>
+
+                    <div class="col-12 col-md-6">
+                        <label for="borger-efternavn" class="form-label">Efternavn</label>
+                        <input type="text" name="efternavn" id="borger-efternavn" class="form-control"
+                               value="{{ borger.efternavn or '' }}" maxlength="100" required>
+                    </div>
+
+                    <div class="col-12 col-md-6">
+                        <label for="borger-birthday" class="form-label">Fødselsdato</label>
+                        <input type="date" name="birthday" id="borger-birthday" class="form-control"
+                               value="{{ borger.get('birthday') or '' }}" required>
+                    </div>
+
+                    <div class="col-12 col-md-6">
+                        <label for="borger-telefon" class="form-label">Telefon (valgfrit)</label>
+                        <input type="tel" name="telefon" id="borger-telefon" class="form-control"
+                               value="{{ borger.telefon or '' }}" maxlength="25">
+                    </div>
+
+                    <div class="col-12 col-md-6">
+                        <label for="borger-kontaktperson" class="form-label">Kontaktperson</label>
+                        <select name="kontaktperson_id" id="borger-kontaktperson" class="form-select" required>
+                            <option value="" disabled {% if not kontaktpersoner %}selected{% endif %}>Vælg kontaktperson</option>
+                            {% for kontaktperson in kontaktpersoner %}
+                            <option value="{{ kontaktperson['kontaktperson_id'] }}"
+                                    {% if kontaktperson['kontaktperson_id'] == borger.kontaktperson_id %}selected{% endif %}>
+                                {{ kontaktperson['fornavn'] }} {{ kontaktperson['efternavn'] }} (ID: {{ kontaktperson['kontaktperson_id'] }}){% if not kontaktperson['aktiv'] %} – Inaktiv{% endif %}
+                            </option>
+                            {% endfor %}
+                        </select>
+                        {% if not kontaktpersoner %}
+                        <p class="text-muted mt-2 mb-0">Der skal være en kontaktperson, før du kan gemme ændringerne.</p>
+                        {% endif %}
+                    </div>
+
+                    <div class="col-12 col-md-6">
+                        <label for="borger-adresse" class="form-label">Adresse (valgfrit)</label>
+                        <textarea name="adresse" id="borger-adresse" class="form-control" rows="2">{{ borger.adresse or '' }}</textarea>
+                    </div>
+
+                    <div class="col-12 col-md-6">
+                        <label for="borger-diagnose" class="form-label">Diagnose (valgfrit)</label>
+                        <textarea name="diagnose" id="borger-diagnose" class="form-control" rows="2">{{ borger.diagnose or '' }}</textarea>
+                    </div>
+
+                    <div class="col-12 col-md-6">
+                        <label for="borger-allergi" class="form-label">Allergi (valgfrit)</label>
+                        <textarea name="allergi" id="borger-allergi" class="form-control" rows="2">{{ borger.allergi or '' }}</textarea>
+                    </div>
+
+                    <div class="col-12">
+                        <div class="form-check">
+                            <input type="checkbox" name="aktiv" value="true" id="borger-aktiv"
+                                   class="form-check-input" {% if borger.aktiv %}checked{% endif %}>
+                            <label for="borger-aktiv" class="form-check-label">Aktiv</label>
+                        </div>
+                    </div>
+
+                    <div class="col-12 d-flex flex-wrap gap-2">
+                        <button type="submit" class="btn btn-warning" {% if not kontaktpersoner %}disabled{% endif %}>Gem ændringer</button>
+                        <a href="{{ url_for('borger_view', borger_id=borger.borger_id) }}" class="btn btn-secondary">Annuller</a>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </section>
 </div>
 
 <div class="row g-4">
@@ -60,5 +149,143 @@
         <h3 class="h6">Diagnose</h3>
         <p class="text-break mb-0" style="white-space: pre-wrap;">{{ borger.diagnose or 'Ikke angivet' }}</p>
     </div>
+</section>
+
+<section class="mt-4" id="medicinplaner" aria-labelledby="medicinplaner-heading">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+        <h2 class="h4 mb-0" id="medicinplaner-heading">Medicinplan</h2>
+        {% if medicinplan and not edit_medicinplan %}
+        <button class="btn btn-outline-primary btn-sm" type="button"
+                data-bs-toggle="collapse" data-bs-target="#medicinplanForm"
+                aria-expanded="false" aria-controls="medicinplanForm">
+            Opret ny plan
+        </button>
+        {% endif %}
+    </div>
+
+    <div class="card">
+        <div class="card-body">
+            {% if medicinplan %}
+            <div class="d-flex justify-content-between align-items-start flex-wrap gap-3 mb-4">
+                <div>
+                    <div class="d-flex align-items-center flex-wrap gap-2">
+                        <h3 class="h5 mb-0 text-break">{{ medicinplan.navn }}</h3>
+                        {% if medicinplan.aktiv %}
+                        <span class="badge bg-success">Aktiv</span>
+                        {% else %}
+                        <span class="badge bg-secondary">Inaktiv</span>
+                        {% endif %}
+                    </div>
+                    <p class="small text-muted mt-1 mb-0">Plan-id: {{ medicinplan.medicinplan_id }}</p>
+                </div>
+                {% if not edit_medicinplan %}
+                <a href="{{ url_for('borger_view', borger_id=borger.borger_id, edit_medicinplan_id=medicinplan.medicinplan_id, _anchor='medicinplanForm') }}" class="btn btn-outline-secondary btn-sm">Rediger</a>
+                {% endif %}
+            </div>
+
+            <div class="row g-4">
+                <div class="col-12 col-md-4">
+                    <h4 class="h6 text-muted mb-2">Dagligt tidspunkt</h4>
+                    <p class="h3 mb-1">{{ medicinplan.tidspunkt }}</p>
+                    <p class="small text-muted mb-0">Dansk tid</p>
+                </div>
+                <div class="col-12 col-md-4">
+                    <h4 class="h6 text-muted mb-2">Periode</h4>
+                    <p class="mb-1">Fra {{ medicinplan.startdato|date_da }}</p>
+                    <p class="mb-0">{% if medicinplan.slutdato %}Til {{ medicinplan.slutdato|date_da }}{% else %}Ingen slutdato{% endif %}</p>
+                </div>
+                <div class="col-12 col-md-4">
+                    <h4 class="h6 text-muted mb-2">Oprettet af</h4>
+                    <p class="text-break mb-1">{{ medicinplan.oprettet_af_navn or 'Ikke angivet' }}</p>
+                    <p class="small text-muted mb-0">{{ medicinplan.oprettet_at|datetime_da }}</p>
+                </div>
+            </div>
+            {% else %}
+            <p class="mb-3">Der er endnu ikke oprettet en medicinplan til {{ borger_navn }}.</p>
+            <button class="btn btn-primary" type="button"
+                    data-bs-toggle="collapse" data-bs-target="#medicinplanForm"
+                    aria-expanded="false" aria-controls="medicinplanForm">
+                Opret medicinplan
+            </button>
+            {% endif %}
+
+            <div class="collapse mt-4{% if edit_medicinplan %} show{% endif %}" id="medicinplanForm">
+                <div class="border-top pt-4">
+                    {% if edit_medicinplan %}
+                    <h3 class="h5 mb-3">Rediger medicinplan</h3>
+                    <form method="POST" action="{{ url_for('update_medicinplan', borger_id=borger.borger_id, medicinplan_id=edit_medicinplan.medicinplan_id) }}">
+                    {% else %}
+                    <h3 class="h5 mb-3">Opret medicinplan</h3>
+                    <form method="POST" action="{{ url_for('create_medicinplan', borger_id=borger.borger_id) }}">
+                    {% endif %}
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+                        <div class="row g-3">
+                            <div class="col-12 col-md-6">
+                                <label for="medicinplan-navn" class="form-label">Navn</label>
+                                <input type="text" name="navn" id="medicinplan-navn" class="form-control"
+                                       value="{{ edit_medicinplan.navn if edit_medicinplan else '' }}"
+                                       maxlength="100" required>
+                            </div>
+                            <div class="col-12 col-md-6">
+                                <label for="medicinplan-tidspunkt" class="form-label">Dagligt tidspunkt</label>
+                                <input type="time" name="tidspunkt" id="medicinplan-tidspunkt" class="form-control"
+                                       value="{{ edit_medicinplan.tidspunkt if edit_medicinplan else '' }}" step="1" required>
+                                <div class="form-text">Klokkeslættet angives i dansk tid.</div>
+                            </div>
+                            <div class="col-12 col-md-6">
+                                <label for="medicinplan-startdato" class="form-label">Startdato</label>
+                                <input type="date" name="startdato" id="medicinplan-startdato" class="form-control"
+                                       value="{{ edit_medicinplan.startdato if edit_medicinplan else '' }}" required>
+                            </div>
+                            <div class="col-12 col-md-6">
+                                <label for="medicinplan-slutdato" class="form-label">Slutdato (valgfrit)</label>
+                                <input type="date" name="slutdato" id="medicinplan-slutdato" class="form-control"
+                                       value="{{ (edit_medicinplan.slutdato or '') if edit_medicinplan else '' }}">
+                                <div class="form-text">Lad feltet være tomt, hvis planen ikke har en slutdato.</div>
+                            </div>
+                            {% if edit_medicinplan %}
+                            <div class="col-12">
+                                <div class="form-check">
+                                    <input type="checkbox" name="aktiv" value="true" id="medicinplan-aktiv"
+                                           class="form-check-input" {% if edit_medicinplan.aktiv %}checked{% endif %}>
+                                    <label for="medicinplan-aktiv" class="form-check-label">Aktiv</label>
+                                </div>
+                            </div>
+                            {% endif %}
+                            <div class="col-12 d-flex flex-wrap gap-2">
+                                <button type="submit" class="btn {{ 'btn-warning' if edit_medicinplan else 'btn-primary' }}">{{ 'Gem ændringer' if edit_medicinplan else 'Opret medicinplan' }}</button>
+                                <a href="{{ url_for('borger_view', borger_id=borger.borger_id, medicinplan_id=medicinplan.medicinplan_id if medicinplan else none, _anchor='medicinplaner') }}" class="btn btn-secondary">Annuller</a>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% if medicinplaner|length > 1 %}
+    <details class="mt-3">
+        <summary class="fw-semibold">Andre medicinplaner ({{ medicinplaner|length - 1 }})</summary>
+        <ul class="list-group mt-3">
+            {% for anden_plan in medicinplaner %}
+            {% if anden_plan.medicinplan_id != medicinplan.medicinplan_id %}
+            <li class="list-group-item d-flex justify-content-between align-items-center flex-wrap gap-3 py-3">
+                <div>
+                    <div class="d-flex align-items-center flex-wrap gap-2">
+                        <strong class="text-break">{{ anden_plan.navn }}</strong>
+                        <span class="badge {{ 'bg-success' if anden_plan.aktiv else 'bg-secondary' }}">{{ 'Aktiv' if anden_plan.aktiv else 'Inaktiv' }}</span>
+                    </div>
+                    <p class="small text-muted mb-0 mt-1">
+                        Dagligt kl. {{ anden_plan.tidspunkt }} · Fra {{ anden_plan.startdato|date_da }} · {% if anden_plan.slutdato %}Til {{ anden_plan.slutdato|date_da }}{% else %}Ingen slutdato{% endif %}
+                    </p>
+                </div>
+                <a href="{{ url_for('borger_view', borger_id=borger.borger_id, medicinplan_id=anden_plan.medicinplan_id, _anchor='medicinplaner') }}" class="btn btn-outline-secondary btn-sm">Vis plan</a>
+            </li>
+            {% endif %}
+            {% endfor %}
+        </ul>
+    </details>
+    {% endif %}
 </section>
 {% endblock %}
