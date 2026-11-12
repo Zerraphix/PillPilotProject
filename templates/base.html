@@ -10,18 +10,34 @@
           crossorigin="anonymous">
 </head>
 <body class="bg-light">
-    <nav class="navbar navbar-dark bg-dark">
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
         <div class="container">
             <a class="navbar-brand" href="{{ url_for('home') }}">PillPilot</a>
             {% if session.get('logged_in') %}
-            <div class="d-flex align-items-center flex-wrap gap-3">
-                <span class="navbar-text text-white">
-                    {{ session.get('fornavn') }} {{ session.get('efternavn') }}
-                </span>
-                <form action="{{ url_for('logout') }}" method="post">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <button type="submit" class="btn btn-outline-light btn-sm">Log ud</button>
-                </form>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNavbar"
+                    aria-controls="mainNavbar" aria-expanded="false" aria-label="Vis navigation">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="mainNavbar">
+                <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+                    <li class="nav-item">
+                        <a class="nav-link{% if request.endpoint == 'dashboard' %} active{% endif %}"
+                           href="{{ url_for('dashboard') }}" {% if request.endpoint == 'dashboard' %}aria-current="page"{% endif %}>Dashboard</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link{% if request.endpoint == 'pilledispensere' %} active{% endif %}"
+                           href="{{ url_for('pilledispensere') }}" {% if request.endpoint == 'pilledispensere' %}aria-current="page"{% endif %}>Pilledispensere</a>
+                    </li>
+                </ul>
+                <div class="d-flex align-items-center flex-wrap gap-3">
+                    <span class="navbar-text text-white">
+                        {{ session.get('fornavn') }} {{ session.get('efternavn') }}
+                    </span>
+                    <form action="{{ url_for('logout') }}" method="post">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit" class="btn btn-outline-light btn-sm">Log ud</button>
+                    </form>
+                </div>
             </div>
             {% endif %}
         </div>

@@ -356,6 +356,154 @@ def borger_view(borger_id):
     return render_template("borger.html", borger=borger)
 
 
+# Pilledispenser routes
+@app.route("/pilledispensere")
+@app.doc(hide=True)
+@login_required
+def pilledispensere():
+    """Vis alle dispensere og formularen til oprettelse eller redigering."""
+    edit_pilledispenser_id = request.args.get("edit_pilledispenser_id", type=int)
+    edit_pilledispenser = None
+
+    try:
+        dispenser_response = requests.get(
+            f"{API_BASE_URL}/pilledispenser",
+            headers={"Authorization": f"Bearer {session['token']}"},
+            timeout=5,
+            allow_redirects=False,
+        )
+        borger_response = requests.get(
+            f"{API_BASE_URL}/borger",
+            headers={"Authorization": f"Bearer {session['token']}"},
+            timeout=5,
+            allow_redirects=False,
+        )
+    except requests.RequestException:
+        return render_template("error.html", message="Kan ikke kontakte API'en. Prøv igen om lidt."), 503
+
+    if 401 in (dispenser_response.status_code, borger_response.status_code):
+        session.clear()
+        flash("Dit login er udløbet eller ikke længere gyldigt. Log ind igen.", "warning")
+        return redirect(url_for("login"))
+    if dispenser_response.status_code != 200 or borger_response.status_code != 200:
+        return render_template("error.html", message="Kunne ikke hente dispensere og borgere. Prøv igen om lidt."), 502
+
+    try:
+        alle_pilledispensere = dispenser_response.json()
+        alle_borgere = borger_response.json()
+    except ValueError:
+        return render_template("error.html", message="API'en gav et ugyldigt svar. Prøv igen om lidt."), 502
+    if not isinstance(alle_pilledispensere, list) or not isinstance(alle_borgere, list):
+        return render_template("error.html", message="API'en gav et uventet svar. Prøv igen om lidt."), 502
+
+    # En borger kan kun have én dispenser. Ved redigering må den nuværende borger stadig vælges.
+    optagne_borger_ids = []
+    for dispenser in alle_pilledispensere:
+        if dispenser["pilledispenser_id"] == edit_pilledispenser_id:
+            edit_pilledispenser = dispenser
+        else:
+            optagne_borger_ids.append(dispenser["borger_id"])
+
+    if edit_pilledispenser_id is not None and edit_pilledispenser is None:
+        flash("Pilledispenseren findes ikke.", "warning")
+        return redirect(url_for("pilledispensere"))
+
+    valgbare_borgere = []
+    for borger in alle_borgere:
+        if borger["borger_id"] not in optagne_borger_ids:
+            valgbare_borgere.append(borger)
+
+    return render_template(
+        "pilledispensere.html",
+        pilledispensere=alle_pilledispensere,
+        borgere=valgbare_borgere,
+        edit_pilledispenser=edit_pilledispenser,
+    )
+
+
+@app.route("/pilledispensere/create", methods=["POST"])
+@app.doc(hide=True)
+@login_required
+def create_pilledispenser():
+    """Opret dispenseren hos API'et med den valgte borger."""
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/pilledispenser",
+            headers={"Authorization": f"Bearer {session['token']}"},
+            json={
+                "borger_id": request.form.get("borger_id", type=int),
+                "enhed_id": request.form.get("enhed_id", "").strip(),
+                "antal_rum": request.form.get("antal_rum", type=int),
+                "drift_status": request.form.get("drift_status", ""),
+            },
+            timeout=5,
+            allow_redirects=False,
+        )
+    except requests.RequestException:
+        flash("Kan ikke kontakte API'en. Kontrollér oversigten, før du prøver igen.", "danger")
+        return redirect(url_for("pilledispensere"))
+
+    if response.status_code == 401:
+        session.clear()
+        flash("Dit login er udløbet eller ikke længere gyldigt. Log ind igen.", "warning")
+        return redirect(url_for("login"))
+    if response.status_code == 201:
+        flash("Pilledispenseren er oprettet og tildelt den valgte borger.", "success")
+    elif response.status_code == 409:
+        flash("Kontrollér borgeren og enheds-id'et. Enheds-id'et skal være unikt, og borgeren må kun have én dispenser.", "warning")
+    elif response.status_code in (400, 422):
+        flash("Kontrollér borger, enheds-id, antal rum og driftsstatus. Alle felter skal være udfyldt korrekt.", "warning")
+    else:
+        flash("Pilledispenseren kunne ikke oprettes. Prøv igen om lidt.", "danger")
+
+    return redirect(url_for("pilledispensere"))
+
+
+@app.route("/pilledispensere/update/<int:pilledispenser_id>", methods=["POST"])
+@app.doc(hide=True)
+@login_required
+def update_pilledispenser(pilledispenser_id):
+    """Gem dispenserens oplysninger og borgertildeling gennem API'et."""
+    edit_url = url_for("pilledispensere", edit_pilledispenser_id=pilledispenser_id)
+
+    try:
+        response = requests.put(
+            f"{API_BASE_URL}/pilledispenser/{pilledispenser_id}",
+            headers={"Authorization": f"Bearer {session['token']}"},
+            json={
+                "borger_id": request.form.get("borger_id", type=int),
+                "enhed_id": request.form.get("enhed_id", "").strip(),
+                "antal_rum": request.form.get("antal_rum", type=int),
+                "drift_status": request.form.get("drift_status", ""),
+                "aktiv": request.form.get("aktiv") == "true",
+            },
+            timeout=5,
+            allow_redirects=False,
+        )
+    except requests.RequestException:
+        flash("Kan ikke kontakte API'en. Kontrollér oversigten, før du prøver igen.", "danger")
+        return redirect(edit_url)
+
+    if response.status_code == 401:
+        session.clear()
+        flash("Dit login er udløbet eller ikke længere gyldigt. Log ind igen.", "warning")
+        return redirect(url_for("login"))
+    if response.status_code == 200:
+        flash("Pilledispenseren er opdateret.", "success")
+        return redirect(url_for("pilledispensere"))
+    if response.status_code == 404:
+        flash("Pilledispenseren findes ikke længere.", "warning")
+        return redirect(url_for("pilledispensere"))
+    if response.status_code == 409:
+        flash("Kontrollér borgeren og enheds-id'et. Enheds-id'et skal være unikt, og borgeren må kun have én dispenser.", "warning")
+    elif response.status_code in (400, 422):
+        flash("Kontrollér borger, enheds-id, antal rum og driftsstatus. Alle felter skal være udfyldt korrekt.", "warning")
+    else:
+        flash("Pilledispenseren kunne ikke opdateres. Prøv igen om lidt.", "danger")
+
+    return redirect(edit_url)
+
+
 @app.route("/settings/password", methods=["POST"])
 @app.doc(hide=True)
 @login_required
