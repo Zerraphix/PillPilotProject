@@ -47,6 +47,25 @@ def update_pilledispenser(
 ) -> bool:
     """Ret konfigurationen. Dette sender ingen kommandoer til hardwaren."""
     with get_connection() as conn:
+        dispenser = conn.execute(t"""
+            SELECT borger_id, antal_rum FROM public.pilledispenser
+            WHERE pilledispenser_id = {pilledispenser_id}
+            FOR UPDATE
+        """).fetchone()
+        if dispenser is None:
+            return False
+        if dispenser["borger_id"] != borger_id or dispenser["antal_rum"] != antal_rum:
+            aaben_udlevering = conn.execute(t"""
+                SELECT u.udlevering_id
+                FROM public.medicinudlevering AS u
+                JOIN public.udleveringsstatus AS s ON s.status_id = u.status_id
+                WHERE u.pilledispenser_id = {pilledispenser_id}
+                  AND s.kode IN ('planlagt', 'udleveret', 'ikke_afhentet')
+                LIMIT 1
+            """).fetchone()
+            if aaben_udlevering is not None:
+                raise ValueError("Borger og antal rum kan ikke ændres, mens dispenseren har åbne udleveringer.")
+
         cursor = conn.execute(t"""
             UPDATE public.pilledispenser
             SET borger_id = {borger_id}, enhed_id = {enhed_id}, antal_rum = {antal_rum},

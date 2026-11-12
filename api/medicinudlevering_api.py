@@ -1,7 +1,7 @@
 """Manuel oprettelse og statusregistrering for alle borgeres udleveringer."""
 
 from apiflask import APIBlueprint, Schema, abort
-from apiflask.fields import DateTime, Integer, String
+from apiflask.fields import Date, DateTime, Integer, List, String
 from apiflask.validators import Length, Range
 from marshmallow.fields import AwareDateTime
 
@@ -11,12 +11,17 @@ from database import medicinudlevering_db as database
 api = APIBlueprint("medicinudlevering", __name__, url_prefix="/api/medicinudlevering")
 
 
-class MedicinudleveringIn(Schema):
-    """Vælg plan, dispenser og konkrete tidspunkter med UTC-offset."""
-    medicinplan_id = Integer(required=True, validate=Range(min=1))
-    pilledispenser_id = Integer(required=True, validate=Range(min=1))
-    planlagt_tid = AwareDateTime(required=True)
-    afhentningsfrist = AwareDateTime(required=True)
+class FyldningIn(Schema):
+    """Dispenseren og klokkeslættet findes gennem den valgte plan."""
+    medicinplan_id = Integer(required=True, strict=True, validate=Range(min=1))
+    startdato = Date(required=True)
+    antal = Integer(required=True, strict=True, validate=Range(min=1))
+    afhentningsfrist_minutter = Integer(required=True, strict=True, validate=Range(min=1))
+
+
+class FyldningOut(Schema):
+    """Id'erne på de oprettede udleveringer i datoorden."""
+    udlevering_ider = List(Integer())
 
 
 class MedicinudleveringFilter(Schema):
@@ -74,17 +79,20 @@ def get_one(udlevering_id: int) -> dict:
     return row
 
 
-@api.post("")
+@api.post("/fyldning")
 @api.auth_required(auth)
-@api.input(MedicinudleveringIn)
-@api.output(MedicinudleveringOut, status_code=201)
+@api.input(FyldningIn)
+@api.output(FyldningOut, status_code=201)
 def create(json_data: dict) -> dict:
-    """Opret én planlagt udlevering. Dette drejer ikke dispenserens hjul."""
-    udlevering_id = database.create_medicinudlevering(
-        json_data["medicinplan_id"], json_data["pilledispenser_id"],
-        json_data["planlagt_tid"], json_data["afhentningsfrist"]
-    )
-    return database.get_medicinudlevering(udlevering_id)
+    """Opret én eller flere daglige udleveringer på borgerens dispenser."""
+    try:
+        udlevering_ider = database.create_fyldning(
+            json_data["medicinplan_id"], json_data["startdato"],
+            json_data["antal"], json_data["afhentningsfrist_minutter"]
+        )
+    except OverflowError:
+        abort(400, "Dato eller afhentningsfrist ligger uden for det understøttede interval.")
+    return {"udlevering_ider": udlevering_ider}
 
 
 @api.patch("/<int:udlevering_id>/status")
