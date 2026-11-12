@@ -321,6 +321,92 @@ def dashboard():
     )
 
 
+# Borger routes
+@app.route("/borgere")
+@app.doc(hide=True)
+@login_required
+def borgere():
+    """Vis alle borgere og kontaktpersoner samt formularen til oprettelse."""
+    try:
+        borger_response = requests.get(
+            f"{API_BASE_URL}/borger",
+            headers={"Authorization": f"Bearer {session['token']}"},
+            timeout=5,
+            allow_redirects=False,
+        )
+        kontaktperson_response = requests.get(
+            f"{API_BASE_URL}/kontaktperson",
+            headers={"Authorization": f"Bearer {session['token']}"},
+            timeout=5,
+            allow_redirects=False,
+        )
+    except requests.RequestException:
+        return render_template("error.html", message="Kan ikke kontakte API'en. Prøv igen om lidt."), 503
+
+    if 401 in (borger_response.status_code, kontaktperson_response.status_code):
+        session.clear()
+        flash("Dit login er udløbet eller ikke længere gyldigt. Log ind igen.", "warning")
+        return redirect(url_for("login"))
+    if borger_response.status_code != 200 or kontaktperson_response.status_code != 200:
+        return render_template("error.html", message="Kunne ikke hente borgere og kontaktpersoner. Prøv igen om lidt."), 502
+
+    try:
+        alle_borgere = borger_response.json()
+        kontaktpersoner = kontaktperson_response.json()
+    except ValueError:
+        return render_template("error.html", message="API'en gav et ugyldigt svar. Prøv igen om lidt."), 502
+    if not isinstance(alle_borgere, list) or not isinstance(kontaktpersoner, list):
+        return render_template("error.html", message="API'en gav et uventet svar. Prøv igen om lidt."), 502
+
+    return render_template(
+        "borgere.html",
+        borgere=alle_borgere,
+        kontaktpersoner=kontaktpersoner,
+    )
+
+
+@app.route("/borgere/create", methods=["POST"])
+@app.doc(hide=True)
+@login_required
+def create_borger():
+    """Opret borgeren gennem API'et med den valgte kontaktperson."""
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/borger",
+            headers={"Authorization": f"Bearer {session['token']}"},
+            json={
+                "kontaktperson_id": request.form.get("kontaktperson_id", type=int),
+                "fornavn": request.form.get("fornavn", "").strip(),
+                "efternavn": request.form.get("efternavn", "").strip(),
+                "birthday": request.form.get("birthday", ""),
+                "telefon": request.form.get("telefon", "").strip() or None,
+                "adresse": request.form.get("adresse", "").strip() or None,
+                "diagnose": request.form.get("diagnose", "").strip() or None,
+                "allergi": request.form.get("allergi", "").strip() or None,
+            },
+            timeout=5,
+            allow_redirects=False,
+        )
+    except requests.RequestException:
+        flash("Kan ikke kontakte API'en. Kontrollér oversigten, før du prøver igen.", "danger")
+        return redirect(url_for("borgere"))
+
+    if response.status_code == 401:
+        session.clear()
+        flash("Dit login er udløbet eller ikke længere gyldigt. Log ind igen.", "warning")
+        return redirect(url_for("login"))
+    if response.status_code == 201:
+        flash("Borgeren er oprettet og tilknyttet den valgte kontaktperson.", "success")
+    elif response.status_code == 409:
+        flash("Den valgte kontaktperson findes ikke længere. Vælg en kontaktperson fra listen.", "warning")
+    elif response.status_code in (400, 422):
+        flash("Kontrollér formularens felter. Fornavn, efternavn, fødselsdato og kontaktperson skal være udfyldt korrekt.", "warning")
+    else:
+        flash("Borgeren kunne ikke oprettes. Prøv igen om lidt.", "danger")
+
+    return redirect(url_for("borgere"))
+
+
 @app.route("/borger/<int:borger_id>")
 @app.doc(hide=True)
 @login_required

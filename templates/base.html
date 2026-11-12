@@ -25,6 +25,10 @@
                            href="{{ url_for('dashboard') }}" {% if request.endpoint == 'dashboard' %}aria-current="page"{% endif %}>Dashboard</a>
                     </li>
                     <li class="nav-item">
+                        <a class="nav-link{% if request.endpoint in ('borgere', 'borger_view') %} active{% endif %}"
+                           href="{{ url_for('borgere') }}" {% if request.endpoint in ('borgere', 'borger_view') %}aria-current="page"{% endif %}>Borgere</a>
+                    </li>
+                    <li class="nav-item">
                         <a class="nav-link{% if request.endpoint == 'pilledispensere' %} active{% endif %}"
                            href="{{ url_for('pilledispensere') }}" {% if request.endpoint == 'pilledispensere' %}aria-current="page"{% endif %}>Pilledispensere</a>
                     </li>
