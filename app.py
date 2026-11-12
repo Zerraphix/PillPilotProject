@@ -6,7 +6,7 @@ Hjemmeside: /login. Swagger: /docs. Der ændres ingen tabeller ved opstart.
 
 import logging
 import os
-from datetime import timedelta
+from datetime import date, datetime, timedelta, timezone
 from functools import wraps
 from pathlib import Path
 
@@ -118,6 +118,31 @@ def login_required(route_function):
         return route_function(*args, **kwargs)
 
     return wrapper
+
+
+@app.template_filter("date_da")
+def format_date(value):
+    """Vis en ISO-dato som dag-måned-år."""
+    if not value:
+        return "Ikke angivet"
+    try:
+        return date.fromisoformat(value).strftime("%d-%m-%Y")
+    except (TypeError, ValueError):
+        return str(value)
+
+
+@app.template_filter("datetime_da")
+def format_datetime(value):
+    """Vis et ISO-tidspunkt i UTC, når API'et angiver en tidszone."""
+    if not value:
+        return "Ikke angivet"
+    try:
+        timestamp = datetime.fromisoformat(value)
+    except (TypeError, ValueError):
+        return str(value)
+    if timestamp.tzinfo is not None:
+        return timestamp.astimezone(timezone.utc).strftime("%d-%m-%Y kl. %H:%M:%S UTC")
+    return timestamp.strftime("%d-%m-%Y kl. %H:%M:%S") + " (tidszone ikke angivet)"
 
 
 # API setup
@@ -294,6 +319,41 @@ def dashboard():
         password_max_length=PASSWORD_MAX_LENGTH,
         password_settings_open=request.args.get("settings") == "password",
     )
+
+
+@app.route("/borger/<int:borger_id>")
+@app.doc(hide=True)
+@login_required
+def borger_view(borger_id):
+    """Hent og vis borgerens oplysninger og den tilknyttede kontaktperson."""
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/borger/{borger_id}",
+            headers={"Authorization": f"Bearer {session['token']}"},
+            timeout=5,
+            allow_redirects=False,
+        )
+    except requests.RequestException:
+        return render_template("error.html", message="Kan ikke kontakte API'en. Prøv igen om lidt."), 503
+
+    if response.status_code == 401:
+        session.clear()
+        flash("Dit login er udløbet eller ikke længere gyldigt. Log ind igen.", "warning")
+        return redirect(url_for("login"))
+    if response.status_code == 404:
+        return render_template("error.html", message="Borgeren findes ikke."), 404
+    if response.status_code != 200:
+        return render_template("error.html", message="Kunne ikke hente borgeren. Prøv igen om lidt."), 502
+
+    try:
+        borger = response.json()
+    except ValueError:
+        return render_template("error.html", message="API'en gav et ugyldigt svar. Prøv igen om lidt."), 502
+    required_fields = {"borger_id", "fornavn", "efternavn", "aktiv"}
+    if not isinstance(borger, dict) or not required_fields.issubset(borger) or borger["borger_id"] != borger_id:
+        return render_template("error.html", message="API'en gav et uventet svar. Prøv igen om lidt."), 502
+
+    return render_template("borger.html", borger=borger)
 
 
 @app.route("/settings/password", methods=["POST"])

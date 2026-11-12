@@ -63,19 +63,19 @@
             <table class="table table-striped align-middle mb-0" aria-labelledby="borgere-heading">
                 <thead>
                     <tr>
-                        <th scope="col">Borger-id</th>
                         <th scope="col">Navn</th>
-                        <th scope="col">Telefon</th>
                         <th scope="col">Aktiv</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for borger in borgere %}
                     <tr>
-                        <td>{{ borger.borger_id }}</td>
-                        <td>{{ borger.fornavn }} {{ borger.efternavn }}</td>
-                        <td>{{ borger.telefon or 'Ikke angivet' }}</td>
-                        <td>{{ 'Ja' if borger.aktiv else 'Nej' }}</td>
+                        <td class="text-break">
+                            <a href="{{ url_for('borger_view', borger_id=borger.borger_id) }}">
+                                {{ borger.fornavn }} {{ borger.efternavn }}
+                            </a>
+                        </td>
+                        <td>{{ 'Ja' if borger.aktiv is sameas true else 'Nej' if borger.aktiv is sameas false else 'Ikke angivet' }}</td>
                     </tr>
                     {% endfor %}
                 </tbody>

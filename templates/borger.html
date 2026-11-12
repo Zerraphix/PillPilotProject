@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% set borger_navn = ((borger.fornavn or '') ~ ' ' ~ (borger.efternavn or ''))|trim or 'Ikke angivet' %}
+{% block title %}{{ borger_navn }} · PillPilot{% endblock %}
+
+{% block content %}
+<a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary mb-4">Tilbage til dashboard</a>
+
+<div class="mb-4">
+    <h1 class="h3 text-break">{{ borger_navn }}</h1>
+    <p class="mb-0">Aktiv: <strong>{{ 'Ja' if borger.aktiv is sameas true else 'Nej' if borger.aktiv is sameas false else 'Ikke angivet' }}</strong></p>
+</div>
+
+<div class="row g-4">
+    <div class="col-12 col-lg-6">
+        <section class="card h-100" aria-labelledby="personoplysninger-heading">
+            <div class="card-body">
+                <h2 class="h5 mb-3" id="personoplysninger-heading">Personoplysninger</h2>
+                <dl class="row mb-0">
+                    <dt class="col-sm-4">Borger-id</dt>
+                    <dd class="col-sm-8">{{ borger.borger_id if borger.get('borger_id') is not none else 'Ikke angivet' }}</dd>
+                    <dt class="col-sm-4">Fødselsdato</dt>
+                    <dd class="col-sm-8">{{ borger.get('birthday')|date_da }}</dd>
+                    <dt class="col-sm-4">Telefon</dt>
+                    <dd class="col-sm-8 text-break">{{ borger.telefon or 'Ikke angivet' }}</dd>
+                    <dt class="col-sm-4">Adresse</dt>
+                    <dd class="col-sm-8 text-break" style="white-space: pre-wrap;">{{ borger.adresse or 'Ikke angivet' }}</dd>
+                    <dt class="col-sm-4">Oprettet</dt>
+                    <dd class="col-sm-8">{{ borger.get('oprettet_at')|datetime_da }}</dd>
+                </dl>
+            </div>
+        </section>
+    </div>
+
+    <div class="col-12 col-lg-6">
+        <section class="card h-100" aria-labelledby="kontaktperson-heading">
+            <div class="card-body">
+                <h2 class="h5 mb-3" id="kontaktperson-heading">Kontaktperson</h2>
+                <dl class="row mb-0">
+                    <dt class="col-sm-4">Kontaktperson-id</dt>
+                    <dd class="col-sm-8">{{ borger.kontaktperson_id if borger.get('kontaktperson_id') is not none else 'Ikke angivet' }}</dd>
+                    <dt class="col-sm-4">Navn</dt>
+                    <dd class="col-sm-8 text-break">{{ borger.kontaktperson_navn or 'Ikke angivet' }}</dd>
+                    <dt class="col-sm-4">Email</dt>
+                    <dd class="col-sm-8 text-break">{{ borger.kontaktperson_email or 'Ikke angivet' }}</dd>
+                    <dt class="col-sm-4">Telefon</dt>
+                    <dd class="col-sm-8 text-break">{{ borger.kontaktperson_telefon or 'Ikke angivet' }}</dd>
+                    <dt class="col-sm-4">Aktiv</dt>
+                    <dd class="col-sm-8">{{ 'Ja' if borger.kontaktperson_aktiv is sameas true else 'Nej' if borger.kontaktperson_aktiv is sameas false else 'Ikke angivet' }}</dd>
+                </dl>
+            </div>
+        </section>
+    </div>
+</div>
+
+<section class="card mt-4" aria-labelledby="helbredsoplysninger-heading">
+    <div class="card-body">
+        <h2 class="h5 mb-3" id="helbredsoplysninger-heading">Helbredsoplysninger</h2>
+        <h3 class="h6">Allergi</h3>
+        <p class="text-break mb-4" style="white-space: pre-wrap;">{{ borger.allergi or 'Ikke angivet' }}</p>
+        <h3 class="h6">Diagnose</h3>
+        <p class="text-break mb-0" style="white-space: pre-wrap;">{{ borger.diagnose or 'Ikke angivet' }}</p>
+    </div>
+</section>
+{% endblock %}
