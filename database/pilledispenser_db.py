@@ -93,3 +93,33 @@ def delete_pilledispenser(pilledispenser_id: int) -> bool:
             DELETE FROM public.pilledispenser WHERE pilledispenser_id = {pilledispenser_id}
         """)
         return cursor.rowcount == 1
+
+
+def leveringer_tilbage(borger_id: int | None = None) -> list[dict]:
+    """Tæl registreringer med status planlagt pr. aktiv dispenser.
+
+    Borger-id er valgfrit. Dispensere med nul planlagte udleveringer vises også.
+    Forsinkede registreringer tælles, indtil deres status ændres.
+    Antallet er en planoversigt, ikke en måling af fysisk medicinbeholdning.
+    """
+    with get_connection() as conn:
+        return conn.execute(t"""
+            SELECT p.pilledispenser_id, p.enhed_id, p.borger_id,
+                   b.fornavn || ' ' || b.efternavn AS borger_navn,
+                   COUNT(u.udlevering_id) AS planlagte_tilbage
+            FROM public.pilledispenser AS p
+            JOIN public.borger AS b ON b.borger_id = p.borger_id
+            LEFT JOIN public.medicinudlevering AS u
+                ON u.pilledispenser_id = p.pilledispenser_id
+                AND u.status_id = (
+                    SELECT status_id
+                    FROM public.udleveringsstatus
+                    WHERE kode = 'planlagt'
+                )
+            WHERE p.aktiv = TRUE
+            GROUP BY p.pilledispenser_id, p.enhed_id, p.borger_id,
+                     b.fornavn, b.efternavn
+            HAVING ({borger_id}::integer IS NULL
+                    OR p.borger_id = {borger_id})
+            ORDER BY planlagte_tilbage, p.pilledispenser_id
+        """).fetchall()

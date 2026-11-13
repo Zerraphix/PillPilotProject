@@ -48,6 +48,22 @@ class PilledispenserOut(Schema):
     kontaktperson_navn = String()
 
 
+class LeveringerTilbageFilter(Schema):
+    """Vælg en borger, eller udelad borger_id for at se alle aktive dispensere."""
+    borger_id = Integer(
+        load_default=None, allow_none=True, validate=Range(min=1, max=2147483647)
+    )
+
+
+class LeveringerTilbageOut(Schema):
+    """Antal registreringer med status planlagt, ikke en målt beholdning."""
+    pilledispenser_id = Integer()
+    enhed_id = String()
+    borger_id = Integer()
+    borger_navn = String()
+    planlagte_tilbage = Integer()
+
+
 @api.get("")
 @api.auth_required(auth)
 @api.input(PilledispenserFilter, location="query")
@@ -55,6 +71,19 @@ class PilledispenserOut(Schema):
 def get_all(query_data: dict) -> list[dict]:
     """Hent alle dispensere, eventuelt filtreret efter borger."""
     return database.all_pilledispensere(query_data["borger_id"])
+
+
+@api.get("/leveringer-tilbage")
+@api.auth_required(auth)
+@api.input(LeveringerTilbageFilter, location="query")
+@api.output(LeveringerTilbageOut(many=True))
+def get_leveringer_tilbage(query_data: dict) -> list[dict]:
+    """Hent antal planlagte udleveringer, eventuelt for en bestemt borger.
+
+    Resultatet tæller kun rækker med status planlagt. Det angiver ikke fysisk
+    beholdning. Forsinkede planlagte rækker tælles også. Kaldet ændrer ingen data.
+    """
+    return database.leveringer_tilbage(query_data["borger_id"])
 
 
 @api.get("/<int:pilledispenser_id>")
