@@ -286,6 +286,7 @@ def login():
 @app.doc(hide=True)
 @login_required
 def dashboard():
+    """Vis egne borgere med dispenser, plan og kommende udlevering."""
     try:
         response = requests.get(
             f"{API_BASE_URL}/borger",
@@ -311,9 +312,130 @@ def dashboard():
     if not isinstance(borgere, list):
         return render_template("error.html", message="API'en gav et uventet svar. Prøv igen om lidt."), 502
 
+    borgeroversigter = []
+    nu = datetime.now(ZoneInfo("Europe/Copenhagen"))
+    for borger in borgere:
+        if not isinstance(borger, dict) or type(borger.get("borger_id")) is not int or borger["borger_id"] < 1:
+            return render_template("error.html", message="API'en gav et uventet svar. Prøv igen om lidt."), 502
+        if borger.get("kontaktperson_id") != session["kontaktperson_id"]:
+            return render_template("error.html", message="API'en gav et uventet svar. Prøv igen om lidt."), 502
+        borger_id = borger["borger_id"]
+
+        try:
+            oversigt_response = requests.get(
+                f"{API_BASE_URL}/borger/{borger_id}/oversigt",
+                headers={"Authorization": f"Bearer {session['token']}"},
+                timeout=5,
+                allow_redirects=False,
+            )
+            antal_response = requests.get(
+                f"{API_BASE_URL}/pilledispenser/leveringer-tilbage",
+                headers={"Authorization": f"Bearer {session['token']}"},
+                params={"borger_id": borger_id},
+                timeout=5,
+                allow_redirects=False,
+            )
+        except requests.RequestException:
+            return render_template("error.html", message="Kan ikke kontakte API'en. Prøv igen om lidt."), 503
+
+        if 401 in (oversigt_response.status_code, antal_response.status_code):
+            session.clear()
+            flash("Dit login er udløbet eller ikke længere gyldigt. Log ind igen.", "warning")
+            return redirect(url_for("login"))
+        if oversigt_response.status_code != 200 or antal_response.status_code != 200:
+            return render_template("error.html", message="Kunne ikke hente borgernes overblik. Prøv igen om lidt."), 502
+
+        try:
+            oversigt = oversigt_response.json()
+            antal_resultater = antal_response.json()
+        except ValueError:
+            return render_template("error.html", message="API'en gav et ugyldigt svar. Prøv igen om lidt."), 502
+        required_fields = {"borger", "pilledispensere", "medicinplaner", "medicinudleveringer"}
+        if not isinstance(oversigt, dict) or not required_fields.issubset(oversigt):
+            return render_template("error.html", message="API'en gav et uventet svar. Prøv igen om lidt."), 502
+
+        borger = oversigt["borger"]
+        pilledispensere = oversigt["pilledispensere"]
+        medicinplaner = oversigt["medicinplaner"]
+        udleveringer = oversigt["medicinudleveringer"]
+        required_fields = {"borger_id", "kontaktperson_id", "fornavn", "efternavn", "aktiv"}
+        if not isinstance(borger, dict) or not required_fields.issubset(borger) or borger["borger_id"] != borger_id:
+            return render_template("error.html", message="API'en gav et uventet svar. Prøv igen om lidt."), 502
+        if borger["kontaktperson_id"] != session["kontaktperson_id"]:
+            return render_template("error.html", message="Borgerens kontaktperson er ændret. Opdater dashboardet."), 502
+        for liste in (pilledispensere, medicinplaner, udleveringer, antal_resultater):
+            if not isinstance(liste, list):
+                return render_template("error.html", message="API'en gav et uventet svar. Prøv igen om lidt."), 502
+        if len(pilledispensere) > 1 or len(antal_resultater) > 1:
+            return render_template("error.html", message="API'en gav et uventet svar. Prøv igen om lidt."), 502
+
+        pilledispenser = pilledispensere[0] if pilledispensere else None
+        if pilledispenser is not None:
+            required_fields = {"pilledispenser_id", "borger_id", "enhed_id", "aktiv"}
+            if not isinstance(pilledispenser, dict) or not required_fields.issubset(pilledispenser) or pilledispenser["borger_id"] != borger_id:
+                return render_template("error.html", message="API'en gav et uventet svar. Prøv igen om lidt."), 502
+
+        medicinplan = None
+        for plan in medicinplaner:
+            required_fields = {"medicinplan_id", "borger_id", "navn", "aktiv"}
+            if not isinstance(plan, dict) or not required_fields.issubset(plan) or plan["borger_id"] != borger_id:
+                return render_template("error.html", message="API'en gav et uventet svar. Prøv igen om lidt."), 502
+            if plan["aktiv"]:
+                medicinplan = plan
+        if medicinplan is None and medicinplaner:
+            medicinplan = medicinplaner[-1]
+
+        naeste_udlevering = None
+        tidspunkt_passeret = False
+        for udlevering in reversed(udleveringer):
+            required_fields = {"medicinplan_id", "pilledispenser_id", "borger_id", "status_kode", "planlagt_tid"}
+            if not isinstance(udlevering, dict) or not required_fields.issubset(udlevering) or udlevering["borger_id"] != borger_id:
+                return render_template("error.html", message="API'en gav et uventet svar. Prøv igen om lidt."), 502
+            if pilledispenser and udlevering["pilledispenser_id"] == pilledispenser["pilledispenser_id"] and udlevering["status_kode"] == "planlagt":
+                naeste_udlevering = udlevering
+                break
+
+        if naeste_udlevering:
+            medicinplan = None
+            for plan in medicinplaner:
+                if plan["medicinplan_id"] == naeste_udlevering["medicinplan_id"]:
+                    medicinplan = plan
+                    break
+            if medicinplan is None:
+                return render_template("error.html", message="Kunne ikke finde planen for næste udlevering. Opdater dashboardet."), 502
+            try:
+                planlagt_tid = datetime.fromisoformat(naeste_udlevering["planlagt_tid"])
+            except (TypeError, ValueError):
+                return render_template("error.html", message="API'en gav et ugyldigt tidspunkt. Prøv igen om lidt."), 502
+            if planlagt_tid.tzinfo is None:
+                return render_template("error.html", message="API'ets udlevering mangler en tidszone. Prøv igen om lidt."), 502
+            tidspunkt_passeret = planlagt_tid < nu
+
+        leveringer_tilbage = None
+        if antal_resultater:
+            antal = antal_resultater[0]
+            required_fields = {"borger_id", "pilledispenser_id", "planlagte_tilbage"}
+            if not isinstance(antal, dict) or not required_fields.issubset(antal) or antal["borger_id"] != borger_id:
+                return render_template("error.html", message="API'en gav et uventet svar. Prøv igen om lidt."), 502
+            if type(antal["planlagte_tilbage"]) is not int or antal["planlagte_tilbage"] < 0:
+                return render_template("error.html", message="API'en gav et ugyldigt antal udleveringer. Prøv igen om lidt."), 502
+            if not pilledispenser or antal["pilledispenser_id"] != pilledispenser["pilledispenser_id"]:
+                return render_template("error.html", message="Borgerens dispenser er ændret. Opdater dashboardet."), 502
+            if pilledispenser["aktiv"]:
+                leveringer_tilbage = antal["planlagte_tilbage"]
+
+        borgeroversigter.append({
+            "borger": borger,
+            "pilledispenser": pilledispenser,
+            "medicinplan": medicinplan,
+            "naeste_udlevering": naeste_udlevering,
+            "tidspunkt_passeret": tidspunkt_passeret,
+            "leveringer_tilbage": leveringer_tilbage,
+        })
+
     return render_template(
         "dashboard.html",
-        borgere=borgere,
+        borgeroversigter=borgeroversigter,
         password_pattern=PASSWORD_PATTERN,
         password_error=PASSWORD_ERROR,
         password_min_length=PASSWORD_MIN_LENGTH,

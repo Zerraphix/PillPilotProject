@@ -56,31 +56,82 @@
 
 <section class="card" aria-labelledby="borgere-heading">
     <div class="card-body">
-        <h2 class="h5 mb-3" id="borgere-heading">Dine tilknyttede borgere ({{ borgere|length }})</h2>
+        <h2 class="h5 mb-3" id="borgere-heading">Dine tilknyttede borgere ({{ borgeroversigter|length }})</h2>
 
-        {% if borgere %}
+        {% if borgeroversigter %}
         <div class="table-responsive">
-            <table class="table table-striped align-middle mb-0" aria-labelledby="borgere-heading">
+            <table class="table table-striped table-hover align-middle mb-0" aria-labelledby="borgere-heading">
                 <thead>
                     <tr>
-                        <th scope="col">Navn</th>
-                        <th scope="col">Aktiv</th>
+                        <th scope="col">Borger</th>
+                        <th scope="col">Pilledispenser</th>
+                        <th scope="col">Medicinplan</th>
+                        <th scope="col">Næste udlevering</th>
+                        <th scope="col">Leveringer tilbage</th>
                     </tr>
                 </thead>
                 <tbody>
-                    {% for borger in borgere %}
+                    {% for oversigt in borgeroversigter %}
+                    {% set borger = oversigt.borger %}
+                    {% set pilledispenser = oversigt.pilledispenser %}
+                    {% set medicinplan = oversigt.medicinplan %}
                     <tr>
                         <td class="text-break">
-                            <a href="{{ url_for('borger_view', borger_id=borger.borger_id) }}">
-                                {{ borger.fornavn }} {{ borger.efternavn }}
+                            <a href="{{ url_for('borger_view', borger_id=borger.borger_id, medicinplan_id=medicinplan.medicinplan_id if medicinplan else none) }}">
+                                {{ ((borger.fornavn or '') ~ ' ' ~ (borger.efternavn or ''))|trim or 'Ikke angivet' }}
                             </a>
+                            <div class="mt-1">
+                                <span class="badge {{ 'bg-success' if borger.aktiv else 'bg-secondary' }}">{{ 'Aktiv' if borger.aktiv else 'Inaktiv' }}</span>
+                            </div>
                         </td>
-                        <td>{{ 'Ja' if borger.aktiv is sameas true else 'Nej' if borger.aktiv is sameas false else 'Ikke angivet' }}</td>
+                        <td class="text-break">
+                            {% if pilledispenser %}
+                            <a href="{{ url_for('pilledispensere') }}">{{ pilledispenser.enhed_id or 'Ikke angivet' }}</a>
+                            <div class="mt-1">
+                                <span class="badge {{ 'bg-success' if pilledispenser.aktiv else 'bg-secondary' }}">{{ 'Aktiv' if pilledispenser.aktiv else 'Inaktiv' }}</span>
+                            </div>
+                            {% else %}
+                            <span class="text-secondary">Ingen dispenser</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-break">
+                            {% if medicinplan %}
+                            <a href="{{ url_for('borger_view', borger_id=borger.borger_id, medicinplan_id=medicinplan.medicinplan_id, _anchor='medicinplaner') }}">{{ medicinplan.navn or 'Ikke angivet' }}</a>
+                            <div class="mt-1">
+                                <span class="badge {{ 'bg-success' if medicinplan.aktiv else 'bg-secondary' }}">{{ 'Aktiv' if medicinplan.aktiv else 'Inaktiv' }}</span>
+                            </div>
+                            {% else %}
+                            <span class="text-secondary">Ingen medicinplan</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if oversigt.naeste_udlevering %}
+                            <a href="{{ url_for('borger_view', borger_id=borger.borger_id, medicinplan_id=oversigt.naeste_udlevering.medicinplan_id, _anchor='udleveringer') }}">{{ oversigt.naeste_udlevering.planlagt_tid|datetime_da }}</a>
+                            {% if oversigt.tidspunkt_passeret %}
+                            <div class="mt-1"><span class="badge bg-warning text-dark">Tidspunkt passeret</span></div>
+                            {% endif %}
+                            {% else %}
+                            <span class="text-secondary">Ingen planlagte</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if not pilledispenser %}
+                            <span class="text-secondary">Ingen dispenser</span>
+                            {% elif oversigt.leveringer_tilbage is none %}
+                            <span class="text-secondary">Ikke opgjort</span>
+                            {% if not pilledispenser.aktiv %}
+                            <div class="small text-muted">Inaktiv dispenser</div>
+                            {% endif %}
+                            {% else %}
+                            <span class="badge {{ 'bg-warning text-dark' if oversigt.leveringer_tilbage == 0 else 'bg-primary' }}">{{ oversigt.leveringer_tilbage }}</span>
+                            {% endif %}
+                        </td>
                     </tr>
                     {% endfor %}
                 </tbody>
             </table>
         </div>
+        <p class="small text-muted mt-3 mb-0">Leveringer tilbage tæller udleveringer med status Planlagt på den aktive dispenser.</p>
         {% else %}
         <p class="text-secondary mb-0">Der er endnu ingen borgere tilknyttet dig.</p>
         {% endif %}
