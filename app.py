@@ -6,9 +6,10 @@ Hjemmeside: /login. Swagger: /docs. Der ændres ingen tabeller ved opstart.
 
 import logging
 import os
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta
 from functools import wraps
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import psycopg
 import requests
@@ -133,7 +134,7 @@ def format_date(value):
 
 @app.template_filter("datetime_da")
 def format_datetime(value):
-    """Vis et ISO-tidspunkt i UTC, når API'et angiver en tidszone."""
+    """Vis et ISO-tidspunkt i dansk tid, når API'et angiver en tidszone."""
     if not value:
         return "Ikke angivet"
     try:
@@ -141,7 +142,7 @@ def format_datetime(value):
     except (TypeError, ValueError):
         return str(value)
     if timestamp.tzinfo is not None:
-        return timestamp.astimezone(timezone.utc).strftime("%d-%m-%Y kl. %H:%M:%S UTC")
+        return timestamp.astimezone(ZoneInfo("Europe/Copenhagen")).strftime("%d-%m-%Y kl. %H:%M:%S") + " (dansk tid)"
     return timestamp.strftime("%d-%m-%Y kl. %H:%M:%S") + " (tidszone ikke angivet)"
 
 
@@ -411,10 +412,10 @@ def create_borger():
 @app.doc(hide=True)
 @login_required
 def borger_view(borger_id):
-    """Hent og vis borgerens oplysninger og den tilknyttede kontaktperson."""
+    """Vis borgerens oplysninger, medicinplan og udleveringer."""
     try:
         response = requests.get(
-            f"{API_BASE_URL}/borger/{borger_id}",
+            f"{API_BASE_URL}/borger/{borger_id}/oversigt",
             headers={"Authorization": f"Bearer {session['token']}"},
             timeout=5,
             allow_redirects=False,
@@ -425,40 +426,48 @@ def borger_view(borger_id):
             timeout=5,
             allow_redirects=False,
         )
-        medicinplan_response = requests.get(
-            f"{API_BASE_URL}/medicinplan",
-            headers={"Authorization": f"Bearer {session['token']}"},
-            params={"borger_id": borger_id},
-            timeout=5,
-            allow_redirects=False,
-        )
     except requests.RequestException:
         return render_template("error.html", message="Kan ikke kontakte API'en. Prøv igen om lidt."), 503
 
-    if 401 in (response.status_code, kontaktperson_response.status_code, medicinplan_response.status_code):
+    if 401 in (response.status_code, kontaktperson_response.status_code):
         session.clear()
         flash("Dit login er udløbet eller ikke længere gyldigt. Log ind igen.", "warning")
         return redirect(url_for("login"))
     if response.status_code == 404:
         return render_template("error.html", message="Borgeren findes ikke."), 404
     if response.status_code != 200:
-        return render_template("error.html", message="Kunne ikke hente borgeren. Prøv igen om lidt."), 502
+        return render_template("error.html", message="Kunne ikke hente borgerens oversigt. Prøv igen om lidt."), 502
     if kontaktperson_response.status_code != 200:
         return render_template("error.html", message="Kunne ikke hente kontaktpersoner. Prøv igen om lidt."), 502
-    if medicinplan_response.status_code != 200:
-        return render_template("error.html", message="Kunne ikke hente medicinplaner. Prøv igen om lidt."), 502
-
     try:
-        borger = response.json()
+        oversigt = response.json()
         kontaktpersoner = kontaktperson_response.json()
-        medicinplaner = medicinplan_response.json()
     except ValueError:
         return render_template("error.html", message="API'en gav et ugyldigt svar. Prøv igen om lidt."), 502
+    required_fields = {"borger", "pilledispensere", "medicinplaner", "medicinudleveringer"}
+    if not isinstance(oversigt, dict) or not required_fields.issubset(oversigt):
+        return render_template("error.html", message="API'en gav et uventet svar. Prøv igen om lidt."), 502
+
+    borger = oversigt["borger"]
+    pilledispensere = oversigt["pilledispensere"]
+    medicinplaner = oversigt["medicinplaner"]
+    udleveringer = oversigt["medicinudleveringer"]
     required_fields = {"borger_id", "fornavn", "efternavn", "aktiv"}
     if not isinstance(borger, dict) or not required_fields.issubset(borger) or borger["borger_id"] != borger_id:
         return render_template("error.html", message="API'en gav et uventet svar. Prøv igen om lidt."), 502
-    if not isinstance(kontaktpersoner, list) or not isinstance(medicinplaner, list):
+    for liste in (kontaktpersoner, pilledispensere, medicinplaner, udleveringer):
+        if not isinstance(liste, list):
+            return render_template("error.html", message="API'en gav et uventet svar. Prøv igen om lidt."), 502
+
+    if len(pilledispensere) > 1:
         return render_template("error.html", message="API'en gav et uventet svar. Prøv igen om lidt."), 502
+    pilledispenser = pilledispensere[0] if pilledispensere else None
+    if pilledispenser is not None:
+        required_fields = {"pilledispenser_id", "borger_id", "antal_rum", "aktiv"}
+        if not isinstance(pilledispenser, dict) or not required_fields.issubset(pilledispenser) or pilledispenser["borger_id"] != borger_id:
+            return render_template("error.html", message="API'en gav et uventet svar. Prøv igen om lidt."), 502
+        if type(pilledispenser["antal_rum"]) is not int or pilledispenser["antal_rum"] < 1:
+            return render_template("error.html", message="API'en gav et uventet svar. Prøv igen om lidt."), 502
 
     edit_medicinplan_id = request.args.get("edit_medicinplan_id", type=int)
     medicinplan_id = request.args.get("medicinplan_id", type=int)
@@ -467,7 +476,8 @@ def borger_view(borger_id):
 
     medicinplan = None
     for plan in medicinplaner:
-        if not isinstance(plan, dict) or plan.get("borger_id") != borger_id:
+        required_fields = {"medicinplan_id", "navn", "tidspunkt", "startdato", "aktiv"}
+        if not isinstance(plan, dict) or not required_fields.issubset(plan) or plan.get("borger_id") != borger_id:
             return render_template("error.html", message="API'en gav et uventet svar. Prøv igen om lidt."), 502
         if medicinplan_id is not None and plan.get("medicinplan_id") == medicinplan_id:
             medicinplan = plan
@@ -484,6 +494,32 @@ def borger_view(borger_id):
         if medicinplan is None and medicinplaner:
             medicinplan = medicinplaner[-1]
 
+    medicinudleveringer = []
+    aabne_udleveringer = []
+    for udlevering in reversed(udleveringer):
+        required_fields = {"udlevering_id", "medicinplan_id", "pilledispenser_id", "status_kode", "planlagt_tid", "afhentningsfrist"}
+        if not isinstance(udlevering, dict) or not required_fields.issubset(udlevering) or udlevering.get("borger_id") != borger_id:
+            return render_template("error.html", message="API'en gav et uventet svar. Prøv igen om lidt."), 502
+        if medicinplan and udlevering["medicinplan_id"] == medicinplan["medicinplan_id"]:
+            medicinudleveringer.append(udlevering)
+        if pilledispenser and udlevering["pilledispenser_id"] == pilledispenser["pilledispenser_id"]:
+            if udlevering["status_kode"] in ("planlagt", "udleveret", "ikke_afhentet"):
+                aabne_udleveringer.append(udlevering)
+
+    fyldning_blokering = None
+    if not medicinplan:
+        fyldning_blokering = "Opret en medicinplan, før du planlægger udleveringer."
+    elif borger["aktiv"] is not True:
+        fyldning_blokering = "Borgeren skal være aktiv, før du kan oprette udleveringer."
+    elif medicinplan["aktiv"] is not True:
+        fyldning_blokering = "Medicinplanen skal være aktiv, før du kan oprette udleveringer."
+    elif not pilledispenser:
+        fyldning_blokering = "Borgeren skal have en pilledispenser, før du kan oprette udleveringer."
+    elif pilledispenser["aktiv"] is not True:
+        fyldning_blokering = "Pilledispenseren skal være aktiv, før du kan oprette udleveringer."
+    elif aabne_udleveringer:
+        fyldning_blokering = "Dispenseren har stadig åbne udleveringer. De skal være afsluttet, før du kan oprette en ny fyldning."
+
     return render_template(
         "borger.html",
         borger=borger,
@@ -492,6 +528,11 @@ def borger_view(borger_id):
         medicinplaner=medicinplaner,
         medicinplan=medicinplan,
         edit_medicinplan=medicinplan if edit_medicinplan_id is not None else None,
+        pilledispenser=pilledispenser,
+        medicinudleveringer=medicinudleveringer,
+        aabne_udleveringer=aabne_udleveringer,
+        fyldning_blokering=fyldning_blokering,
+        fyldning_form_open=request.args.get("opret_udleveringer") == "1",
     )
 
 
@@ -666,6 +707,90 @@ def update_medicinplan(borger_id, medicinplan_id):
         flash("Medicinplanen kunne ikke opdateres. Prøv igen om lidt.", "danger")
 
     return redirect(edit_url)
+
+
+# Udlevering routes
+@app.route("/borger/<int:borger_id>/medicinplan/<int:medicinplan_id>/fyldning/create", methods=["POST"])
+@app.doc(hide=True)
+@login_required
+def create_fyldning(borger_id, medicinplan_id):
+    """Send de tre formularfelter til API'et, som opretter udleveringerne samlet."""
+    borger_url = url_for("borger_view", borger_id=borger_id)
+    plan_url = url_for("borger_view", borger_id=borger_id, medicinplan_id=medicinplan_id)
+    form_url = url_for("borger_view", borger_id=borger_id, medicinplan_id=medicinplan_id, opret_udleveringer=1)
+
+    # Kontrollér, at planen i URL'en hører til borgeren på siden.
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/medicinplan/{medicinplan_id}",
+            headers={"Authorization": f"Bearer {session['token']}"},
+            timeout=5,
+            allow_redirects=False,
+        )
+    except requests.RequestException:
+        flash("Kunne ikke hente medicinplanen. Prøv igen om lidt.", "danger")
+        return redirect(form_url)
+
+    if response.status_code == 401:
+        session.clear()
+        flash("Dit login er udløbet eller ikke længere gyldigt. Log ind igen.", "warning")
+        return redirect(url_for("login"))
+    if response.status_code == 404:
+        flash("Medicinplanen findes ikke længere.", "warning")
+        return redirect(borger_url)
+    if response.status_code != 200:
+        flash("Kunne ikke hente medicinplanen. Prøv igen om lidt.", "danger")
+        return redirect(form_url)
+    try:
+        plan = response.json()
+    except ValueError:
+        plan = None
+    if not isinstance(plan, dict) or plan.get("medicinplan_id") != medicinplan_id:
+        flash("API'en gav et uventet svar. Prøv igen om lidt.", "danger")
+        return redirect(borger_url)
+    if plan.get("borger_id") != borger_id:
+        flash("Medicinplanen hører ikke til denne borger.", "warning")
+        return redirect(borger_url)
+
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/medicinudlevering/fyldning",
+            headers={"Authorization": f"Bearer {session['token']}"},
+            json={
+                "medicinplan_id": medicinplan_id,
+                "startdato": request.form.get("startdato", ""),
+                "antal": request.form.get("antal", type=int),
+                "afhentningsfrist_minutter": request.form.get("afhentningsfrist_minutter", type=int),
+            },
+            timeout=5,
+            allow_redirects=False,
+        )
+    except requests.RequestException:
+        flash("Oprettelsen kunne ikke bekræftes. Kontrollér udleveringslisten, før du prøver igen.", "warning")
+        return redirect(plan_url)
+
+    if response.status_code == 401:
+        session.clear()
+        flash("Dit login er udløbet eller ikke længere gyldigt. Log ind igen.", "warning")
+        return redirect(url_for("login"))
+    if response.status_code == 201:
+        flash("Udleveringerne er oprettet.", "success")
+        return redirect(plan_url)
+    if response.status_code == 400:
+        try:
+            error = response.json()
+        except ValueError:
+            error = None
+        message = error.get("message") if isinstance(error, dict) else None
+        flash(message if isinstance(message, str) else "Kontrollér dato, antal og afhentningsfrist.", "warning")
+    elif response.status_code == 422:
+        flash("Vælg en gyldig dato og positive heltal til antal og afhentningsfrist.", "warning")
+    elif response.status_code == 409:
+        flash("Udleveringerne kunne ikke oprettes. Kontrollér den aktuelle udleveringsliste og de valgte datoer.", "warning")
+    else:
+        flash("Oprettelsen kunne ikke bekræftes. Kontrollér udleveringslisten, før du prøver igen.", "danger")
+        return redirect(plan_url)
+    return redirect(form_url)
 
 
 # Pilledispenser routes
