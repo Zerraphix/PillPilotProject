@@ -348,6 +348,7 @@
 
             {% if medicinudleveringer %}
             <p class="small text-muted">Ændringer i medicinplanen flytter ikke allerede oprettede udleveringer.</p>
+            <p class="small text-muted">Kun planlagte udleveringer kan annulleres. De bliver stående i historikken.</p>
             <div class="table-responsive">
                 <table class="table table-striped table-hover align-middle mb-0">
                     <thead>
@@ -357,6 +358,7 @@
                             <th scope="col">Afhentningsfrist</th>
                             <th scope="col">Status</th>
                             <th scope="col">Detaljer</th>
+                            <th scope="col">Handling</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -394,6 +396,20 @@
                                         <dd class="text-break mb-0">{{ udlevering.fejlbeskrivelse or 'Ingen registreret' }}</dd>
                                     </dl>
                                 </details>
+                            </td>
+                            <td>
+                                {% if udlevering.status_kode == 'planlagt' %}
+                                <details>
+                                    <summary class="btn btn-outline-danger btn-sm">Annuller</summary>
+                                    <form method="POST" action="{{ url_for('annuller_udlevering', borger_id=borger.borger_id, udlevering_id=udlevering.udlevering_id) }}" class="mt-2">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                        <p class="small mb-2">Udleveringen bliver markeret som annulleret.</p>
+                                        <button type="submit" class="btn btn-danger btn-sm">Bekræft annullering</button>
+                                    </form>
+                                </details>
+                                {% else %}
+                                <span class="small text-muted">—</span>
+                                {% endif %}
                             </td>
                         </tr>
                         {% endfor %}

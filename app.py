@@ -915,6 +915,103 @@ def create_fyldning(borger_id, medicinplan_id):
     return redirect(form_url)
 
 
+@app.route("/borger/<int:borger_id>/udlevering/<int:udlevering_id>/annuller", methods=["POST"])
+@app.doc(hide=True)
+@login_required
+def annuller_udlevering(borger_id, udlevering_id):
+    """Annullér en planlagt udlevering gennem API'et og bevar den i historikken."""
+    borger_url = url_for("borger_view", borger_id=borger_id)
+
+    try:
+        udlevering_response = requests.get(
+            f"{API_BASE_URL}/medicinudlevering/{udlevering_id}",
+            headers={"Authorization": f"Bearer {session['token']}"},
+            timeout=5,
+            allow_redirects=False,
+        )
+        status_response = requests.get(
+            f"{API_BASE_URL}/udleveringsstatus",
+            headers={"Authorization": f"Bearer {session['token']}"},
+            timeout=5,
+            allow_redirects=False,
+        )
+    except requests.RequestException:
+        flash("Kunne ikke hente udleveringen og statusserne. Prøv igen om lidt.", "danger")
+        return redirect(borger_url)
+
+    if 401 in (udlevering_response.status_code, status_response.status_code):
+        session.clear()
+        flash("Dit login er udløbet eller ikke længere gyldigt. Log ind igen.", "warning")
+        return redirect(url_for("login"))
+    if udlevering_response.status_code == 404:
+        flash("Udleveringen findes ikke længere.", "warning")
+        return redirect(borger_url)
+    if udlevering_response.status_code != 200 or status_response.status_code != 200:
+        flash("Kunne ikke hente udleveringen og statusserne. Prøv igen om lidt.", "danger")
+        return redirect(borger_url)
+    try:
+        udlevering = udlevering_response.json()
+        statusser = status_response.json()
+    except ValueError:
+        flash("API'en gav et ugyldigt svar. Prøv igen om lidt.", "danger")
+        return redirect(borger_url)
+    required_fields = {"udlevering_id", "borger_id", "medicinplan_id", "status_kode"}
+    if not isinstance(udlevering, dict) or not required_fields.issubset(udlevering) or not isinstance(statusser, list):
+        flash("API'en gav et uventet svar. Prøv igen om lidt.", "danger")
+        return redirect(borger_url)
+    if udlevering["udlevering_id"] != udlevering_id or udlevering["borger_id"] != borger_id:
+        flash("Udleveringen hører ikke til denne borger.", "warning")
+        return redirect(borger_url)
+    if type(udlevering["medicinplan_id"]) is not int or udlevering["medicinplan_id"] < 1:
+        flash("API'en gav et uventet svar. Prøv igen om lidt.", "danger")
+        return redirect(borger_url)
+    plan_url = url_for("borger_view", borger_id=borger_id, medicinplan_id=udlevering["medicinplan_id"])
+
+    if udlevering["status_kode"] == "annulleret":
+        flash("Udleveringen er allerede annulleret.", "info")
+        return redirect(plan_url)
+    if udlevering["status_kode"] != "planlagt":
+        flash("Kun planlagte udleveringer kan annulleres. Kontrollér den aktuelle status.", "warning")
+        return redirect(plan_url)
+
+    # Slå id'et op ud fra koden i stedet for at bruge et fast tal fra databasen.
+    annulleret_status_id = None
+    for status in statusser:
+        if isinstance(status, dict) and status.get("kode") == "annulleret":
+            annulleret_status_id = status.get("status_id")
+            break
+    if type(annulleret_status_id) is not int or annulleret_status_id < 1:
+        flash("Kunne ikke finde status Annulleret i API'et. Prøv igen om lidt.", "danger")
+        return redirect(plan_url)
+
+    # API'et kontrollerer den aktuelle status, når ændringen gemmes.
+    try:
+        response = requests.patch(
+            f"{API_BASE_URL}/medicinudlevering/{udlevering_id}/status",
+            headers={"Authorization": f"Bearer {session['token']}"},
+            json={"status_id": annulleret_status_id},
+            timeout=5,
+            allow_redirects=False,
+        )
+    except requests.RequestException:
+        flash("Annulleringen kunne ikke bekræftes. Kontrollér udleveringslisten, før du prøver igen.", "warning")
+        return redirect(plan_url)
+
+    if response.status_code == 401:
+        session.clear()
+        flash("Dit login er udløbet eller ikke længere gyldigt. Log ind igen.", "warning")
+        return redirect(url_for("login"))
+    if response.status_code == 200:
+        flash("Udleveringen er annulleret.", "success")
+    elif response.status_code == 404:
+        flash("Udleveringen findes ikke længere.", "warning")
+    elif response.status_code in (400, 409, 422):
+        flash("Udleveringen kunne ikke annulleres. Kun planlagte udleveringer kan annulleres; kontrollér den aktuelle status.", "warning")
+    else:
+        flash("Annulleringen kunne ikke bekræftes. Kontrollér udleveringslisten, før du prøver igen.", "danger")
+    return redirect(plan_url)
+
+
 # Pilledispenser routes
 @app.route("/pilledispensere")
 @app.doc(hide=True)
