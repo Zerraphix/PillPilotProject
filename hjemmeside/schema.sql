@@ -37,7 +37,11 @@ CREATE TABLE public.borger (
     kontaktperson_id INTEGER NOT NULL,
     fornavn VARCHAR(100) NOT NULL,
     efternavn VARCHAR(100) NOT NULL,
+    birthday date NOT NULL,
     telefon VARCHAR(25),
+    adresse TEXT,
+    diagnose TEXT,
+    allergi TEXT,
     aktiv BOOLEAN NOT NULL DEFAULT TRUE,
     oprettet_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 

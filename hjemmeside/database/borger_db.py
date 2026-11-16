@@ -1,5 +1,7 @@
 """Borgernes SQL med JOIN til den aktuelt ansvarlige kontaktperson."""
 
+from datetime import date
+
 from db import get_connection
 
 
@@ -31,28 +33,29 @@ def get_borger(borger_id: int) -> dict | None:
 
 
 def create_borger(
-    kontaktperson_id: int, fornavn: str, efternavn: str, telefon: str | None = None
+    kontaktperson_id: int, fornavn: str, efternavn: str, birthday: date, telefon: str, adresse: str, diagnose: str, allergi: str | None = None
 ) -> int:
     """Opret en borger med den kontaktperson, som er valgt i requestet."""
     with get_connection() as conn:
         row = conn.execute(t"""
-            INSERT INTO public.borger (kontaktperson_id, fornavn, efternavn, telefon)
-            VALUES ({kontaktperson_id}, {fornavn}, {efternavn}, {telefon})
+            INSERT INTO public.borger (kontaktperson_id, fornavn, efternavn, birthday, telefon, adresse, diagnose, allergi)
+            VALUES ({kontaktperson_id}, {fornavn}, {efternavn}, {birthday}, {telefon}, {adresse}, {diagnose}, {allergi})
             RETURNING borger_id
         """).fetchone()
         return row["borger_id"]
 
 
 def update_borger(
-    borger_id: int, kontaktperson_id: int, fornavn: str, efternavn: str,
-    aktiv: bool, telefon: str | None = None
+    borger_id: int, kontaktperson_id: int, fornavn: str, efternavn: str, birthday: date,
+    telefon: str, adresse: str, diagnose: str, allergi: str, aktiv: bool | None = None
 ) -> bool:
     """Ret borgeren. Den ansvarlige kontaktperson kan også ændres."""
     with get_connection() as conn:
         cursor = conn.execute(t"""
             UPDATE public.borger
             SET kontaktperson_id = {kontaktperson_id}, fornavn = {fornavn},
-                efternavn = {efternavn}, telefon = {telefon}, aktiv = {aktiv}
+                efternavn = {efternavn}, birthday = {birthday}, telefon = {telefon},
+                adresse = {adresse}, diagnose = {diagnose}, allergi = {allergi}, aktiv = {aktiv}
             WHERE borger_id = {borger_id}
         """)
         return cursor.rowcount == 1

@@ -3,6 +3,8 @@
 from werkzeug.security import generate_password_hash
 
 from db import get_connection
+from password_validation import validate_password
+
 
 def all_kontaktpersoner() -> list[dict]:
     """Hent alle kontaktpersoner uden password-hash, også inaktive."""
@@ -38,6 +40,7 @@ def create_kontaktperson(
     fornavn: str, efternavn: str, email: str, password: str, telefon: str | None = None
 ) -> int:
     """Hash password, opret kontaktpersonen, og returnér det nye id."""
+    validate_password(password)
     password_hash = generate_password_hash(password)
     with get_connection() as conn:
         row = conn.execute(t"""
@@ -65,6 +68,7 @@ def update_kontaktperson(
 
 def update_password(kontaktperson_id: int, password: str) -> bool:
     """Gem et nyt password-hash. Det nye password returneres aldrig."""
+    validate_password(password)
     password_hash = generate_password_hash(password)
     with get_connection() as conn:
         cursor = conn.execute(t"""

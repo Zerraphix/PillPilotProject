@@ -1,7 +1,7 @@
 """Alle indloggede kontaktpersoner kan administrere alle borgere."""
 
 from apiflask import APIBlueprint, Schema, abort
-from apiflask.fields import Boolean, DateTime, Integer, String, Nested
+from apiflask.fields import Boolean, Date, DateTime, Integer, String, Nested
 from apiflask.validators import Length, Range
 
 from auth import auth
@@ -21,7 +21,11 @@ class BorgerIn(Schema):
     kontaktperson_id = Integer(required=True, validate=Range(min=1))
     fornavn = String(required=True, validate=Length(min=1, max=100))
     efternavn = String(required=True, validate=Length(min=1, max=100))
+    birthday = Date(required=True)
     telefon = String(load_default=None, allow_none=True, validate=Length(max=25))
+    adresse = String(load_default=None, allow_none=True)
+    diagnose = String(load_default=None, allow_none=True)
+    allergi = String(load_default=None, allow_none=True)
 
 
 class BorgerUpdate(BorgerIn):
@@ -40,7 +44,11 @@ class BorgerOut(Schema):
     kontaktperson_id = Integer()
     fornavn = String()
     efternavn = String()
+    birthday = Date(required=True)
     telefon = String(allow_none=True)
+    adresse = String()
+    diagnose = String()
+    allergi = String()
     aktiv = Boolean()
     oprettet_at = DateTime()
     kontaktperson_navn = String()
@@ -77,7 +85,8 @@ def create(json_data: dict) -> dict:
     """Opret en borger med et selvvalgt kontaktperson_id."""
     borger_id = database.create_borger(
         json_data["kontaktperson_id"], json_data["fornavn"],
-        json_data["efternavn"], json_data["telefon"]
+        json_data["efternavn"], json_data["birthday"], json_data["telefon"],
+        json_data["adresse"], json_data["diagnose"], json_data["allergi"]
     )
     return database.get_borger(borger_id)
 
@@ -90,7 +99,8 @@ def update(borger_id: int, json_data: dict) -> dict:
     """Ret borgeren eller flyt ansvaret til en anden kontaktperson."""
     changed = database.update_borger(
         borger_id, json_data["kontaktperson_id"], json_data["fornavn"],
-        json_data["efternavn"], json_data["aktiv"], json_data["telefon"]
+        json_data["efternavn"], json_data["birthday"], json_data["telefon"],
+        json_data["adresse"], json_data["diagnose"], json_data["allergi"], json_data["aktiv"]
     )
     if not changed:
         abort(404, "Borgeren findes ikke")

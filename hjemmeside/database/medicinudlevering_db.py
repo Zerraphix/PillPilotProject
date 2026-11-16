@@ -1,6 +1,7 @@
 """Udleveringer og deres status. Funktionerne sender ingen hardwarekommandoer."""
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from db import get_connection
 
@@ -47,37 +48,69 @@ def get_medicinudlevering(udlevering_id: int) -> dict | None:
         """).fetchone()
 
 
-def create_medicinudlevering(
-    medicinplan_id: int, pilledispenser_id: int,
-    planlagt_tid: datetime, afhentningsfrist: datetime
-) -> int:
-    """Opret en planlagt udlevering, når borger, plan og dispenser passer sammen."""
+def create_fyldning(
+    medicinplan_id: int, startdato: date, antal: int, afhentningsfrist_minutter: int
+) -> list[int]:
+    """Opret én daglig udlevering pr. valgt dag. API'et kontrollerer inputtyperne."""
     with get_connection() as conn:
-        match = conn.execute(t"""
-            SELECT m.borger_id
+        plan = conn.execute(t"""
+            SELECT m.tidspunkt, m.startdato, m.slutdato, p.pilledispenser_id, p.antal_rum
             FROM public.medicinplan AS m
             JOIN public.borger AS b ON b.borger_id = m.borger_id
-            JOIN public.pilledispenser AS p ON p.borger_id = m.borger_id
-            WHERE m.medicinplan_id = {medicinplan_id}
-              AND p.pilledispenser_id = {pilledispenser_id}
-              AND m.aktiv AND p.aktiv AND b.aktiv
-            FOR SHARE OF m, p, b
+            JOIN public.pilledispenser AS p ON p.borger_id = b.borger_id
+            WHERE m.medicinplan_id = {medicinplan_id} AND m.aktiv AND b.aktiv AND p.aktiv
+            FOR UPDATE OF p FOR SHARE OF m, b
         """).fetchone()
-        if match is None:
-            raise ValueError("Plan og dispenser skal findes, være aktive og tilhøre samme aktive borger.")
+        if plan is None:
+            raise ValueError("Planen, borgeren og borgerens dispenser skal findes og være aktive.")
+        if not 1 <= antal <= plan["antal_rum"] or afhentningsfrist_minutter < 1:
+            raise ValueError("Vælg et antal fra 1 til dispenserens antal rum og en positiv frist i minutter.")
+        sidste_dato = startdato + timedelta(days=antal - 1)
+        if startdato < plan["startdato"] or (plan["slutdato"] and sidste_dato > plan["slutdato"]):
+            raise ValueError("Alle udleveringer skal ligge inden for medicinplanens periode.")
+
+        # En ny fyldning kræver, at dispenserens tidligere udleveringer er afsluttet.
+        aaben_udlevering = conn.execute(t"""
+            SELECT u.udlevering_id
+            FROM public.medicinudlevering AS u
+            JOIN public.udleveringsstatus AS s ON s.status_id = u.status_id
+            WHERE u.pilledispenser_id = {plan['pilledispenser_id']}
+              AND s.kode IN ('planlagt', 'udleveret', 'ikke_afhentet')
+            LIMIT 1
+        """).fetchone()
+        if aaben_udlevering is not None:
+            raise ValueError("Dispenseren har stadig åbne udleveringer. Håndtér dem før en ny fyldning.")
+
         status = conn.execute("""
             SELECT status_id FROM public.udleveringsstatus WHERE kode = 'planlagt'
         """).fetchone()
         if status is None:
             raise ValueError("Statuskoden planlagt mangler i udleveringsstatus.")
-        row = conn.execute(t"""
-            INSERT INTO public.medicinudlevering
-                (medicinplan_id, pilledispenser_id, status_id, planlagt_tid, afhentningsfrist)
-            VALUES ({medicinplan_id}, {pilledispenser_id}, {status['status_id']},
-                    {planlagt_tid}, {afhentningsfrist})
-            RETURNING udlevering_id
-        """).fetchone()
-        return row["udlevering_id"]
+
+        udlevering_ider = []
+        dansk_tid = ZoneInfo("Europe/Copenhagen")
+        nu = datetime.now(timezone.utc)
+        for dag in range(antal):
+            dato = startdato + timedelta(days=dag)
+            lokal_tid = datetime.combine(dato, plan["tidspunkt"], tzinfo=dansk_tid)
+            # Ved urskift kan et klokkeslæt mangle eller forekomme to gange.
+            if lokal_tid.utcoffset() != lokal_tid.replace(fold=1).utcoffset():
+                raise ValueError(f"Klokkeslættet er ikke entydigt den {dato:%d-%m-%Y} på grund af skift mellem sommer- og vintertid.")
+            planlagt_tid = lokal_tid.astimezone(timezone.utc)
+            if planlagt_tid <= nu:
+                raise ValueError("Alle udleveringer i fyldningen skal ligge i fremtiden.")
+            afhentningsfrist = planlagt_tid + timedelta(minutes=afhentningsfrist_minutter)
+
+            row = conn.execute(t"""
+                INSERT INTO public.medicinudlevering
+                    (medicinplan_id, pilledispenser_id, status_id, planlagt_tid, afhentningsfrist)
+                VALUES ({medicinplan_id}, {plan['pilledispenser_id']}, {status['status_id']},
+                        {planlagt_tid}, {afhentningsfrist})
+                RETURNING udlevering_id
+            """).fetchone()
+            udlevering_ider.append(row["udlevering_id"])
+
+        return udlevering_ider
 
 
 def update_status(

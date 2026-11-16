@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+
+{% block title %}Borgere · PillPilot{% endblock %}
+
+{% block content %}
+<h1 class="h3 mb-4">Borgere</h1>
+
+<div class="row g-4">
+    <div class="col-12 col-lg-4">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <h2 class="h5 mb-3">Opret borger</h2>
+                <form method="POST" action="{{ url_for('create_borger') }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+                    <div class="mb-3">
+                        <label for="fornavn" class="form-label">Fornavn</label>
+                        <input type="text" name="fornavn" id="fornavn" class="form-control"
+                               maxlength="100" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="efternavn" class="form-label">Efternavn</label>
+                        <input type="text" name="efternavn" id="efternavn" class="form-control"
+                               maxlength="100" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="birthday" class="form-label">Fødselsdato</label>
+                        <input type="date" name="birthday" id="birthday" class="form-control" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="kontaktperson_id" class="form-label">Kontaktperson</label>
+                        <select name="kontaktperson_id" id="kontaktperson_id" class="form-select" required>
+                            <option value="" disabled {% if not session.get('kontaktperson_id') %}selected{% endif %}>Vælg kontaktperson</option>
+                            {% for kontaktperson in kontaktpersoner %}
+                            <option value="{{ kontaktperson['kontaktperson_id'] }}"
+                                    {% if kontaktperson['kontaktperson_id'] == session.get('kontaktperson_id') %}selected{% endif %}>
+                                {{ kontaktperson['fornavn'] }} {{ kontaktperson['efternavn'] }} (ID: {{ kontaktperson['kontaktperson_id'] }}){% if not kontaktperson['aktiv'] %} – Inaktiv{% endif %}
+                            </option>
+                            {% endfor %}
+                        </select>
+                        {% if not kontaktpersoner %}
+                        <p class="text-muted mt-2 mb-0">Der skal være en kontaktperson, før du kan oprette en borger.</p>
+                        {% endif %}
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="telefon" class="form-label">Telefon (valgfrit)</label>
+                        <input type="tel" name="telefon" id="telefon" class="form-control" maxlength="25">
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="adresse" class="form-label">Adresse (valgfrit)</label>
+                        <textarea name="adresse" id="adresse" class="form-control" rows="2"></textarea>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="diagnose" class="form-label">Diagnose (valgfrit)</label>
+                        <textarea name="diagnose" id="diagnose" class="form-control" rows="2"></textarea>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="allergi" class="form-label">Allergi (valgfrit)</label>
+                        <textarea name="allergi" id="allergi" class="form-control" rows="2"></textarea>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary w-100" {% if not kontaktpersoner %}disabled{% endif %}>Opret borger</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12 col-lg-8">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <h2 class="h5 mb-3">Alle borgere</h2>
+
+                {% if borgere %}
+                <div class="table-responsive">
+                    <table class="table table-striped table-hover align-middle">
+                        <thead>
+                            <tr>
+                                <th scope="col">ID</th>
+                                <th scope="col">Borger</th>
+                                <th scope="col">Kontaktperson</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for borger in borgere %}
+                            <tr>
+                                <td>{{ borger['borger_id'] }}</td>
+                                <td>
+                                    <a href="{{ url_for('borger_view', borger_id=borger['borger_id']) }}" class="text-break">{{ borger['fornavn'] }} {{ borger['efternavn'] }}</a>
+                                    <div class="mt-1">
+                                        {% if borger['aktiv'] %}
+                                        <span class="badge bg-success">Aktiv</span>
+                                        {% else %}
+                                        <span class="badge bg-secondary">Inaktiv</span>
+                                        {% endif %}
+                                    </div>
+                                </td>
+                                <td>
+                                    <div class="text-break">{{ borger['kontaktperson_navn'] or 'Ikke angivet' }}</div>
+                                    <div class="mt-1 mb-2">
+                                        {% if borger['kontaktperson_aktiv'] %}
+                                        <span class="badge bg-success">Aktiv</span>
+                                        {% else %}
+                                        <span class="badge bg-secondary">Inaktiv</span>
+                                        {% endif %}
+                                    </div>
+                                    <div class="small text-break">
+                                        <span class="text-muted">Email:</span>
+                                        {% if borger['kontaktperson_email'] %}
+                                        <a href="mailto:{{ borger['kontaktperson_email'] }}">{{ borger['kontaktperson_email'] }}</a>
+                                        {% else %}
+                                        Ikke angivet
+                                        {% endif %}
+                                    </div>
+                                    <div class="small text-break">
+                                        <span class="text-muted">Telefon:</span>
+                                        {% if borger['kontaktperson_telefon'] %}
+                                        <a href="tel:{{ borger['kontaktperson_telefon'] }}">{{ borger['kontaktperson_telefon'] }}</a>
+                                        {% else %}
+                                        Ikke angivet
+                                        {% endif %}
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-muted mb-0">Ingen borgere fundet.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

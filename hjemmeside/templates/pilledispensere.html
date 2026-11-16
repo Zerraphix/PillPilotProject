@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+
+{% block title %}Pilledispensere · PillPilot{% endblock %}
+
+{% block content %}
+<h1 class="h3 mb-4">Pilledispensere</h1>
+
+<div class="row g-4">
+    <div class="col-12 col-lg-4">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                {% if edit_pilledispenser %}
+                    <h2 class="h5 mb-3">Rediger pilledispenser</h2>
+                    <form method="POST" action="{{ url_for('update_pilledispenser', pilledispenser_id=edit_pilledispenser['pilledispenser_id']) }}">
+                {% else %}
+                    <h2 class="h5 mb-3">Opret pilledispenser</h2>
+                    <form method="POST" action="{{ url_for('create_pilledispenser') }}">
+                {% endif %}
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+                    <div class="mb-3">
+                        <label for="enhed_id" class="form-label">Enheds-id</label>
+                        <input type="text" name="enhed_id" id="enhed_id" class="form-control"
+                               value="{{ edit_pilledispenser['enhed_id'] if edit_pilledispenser else '' }}"
+                               maxlength="100" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="antal_rum" class="form-label">Antal rum</label>
+                        <input type="number" name="antal_rum" id="antal_rum" class="form-control"
+                               value="{{ edit_pilledispenser['antal_rum'] if edit_pilledispenser else '' }}"
+                               min="1" step="1" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="borger_id" class="form-label">Borger</label>
+                        <select name="borger_id" id="borger_id" class="form-select" required>
+                            <option value="" disabled {% if not edit_pilledispenser %}selected{% endif %}>Vælg borger</option>
+                            {% for borger in borgere %}
+                            <option value="{{ borger['borger_id'] }}"
+                                    {% if edit_pilledispenser and edit_pilledispenser['borger_id'] == borger['borger_id'] %}selected{% endif %}>
+                                {{ borger['fornavn'] }} {{ borger['efternavn'] }} (ID: {{ borger['borger_id'] }}){% if not borger['aktiv'] %} – Inaktiv{% endif %}
+                            </option>
+                            {% endfor %}
+                        </select>
+                        <div class="form-text">Hver borger kan have én pilledispenser.</div>
+                        {% if not borgere %}
+                        <p class="text-muted mt-2 mb-0">Alle borgere har allerede en pilledispenser, eller der er endnu ikke oprettet borgere.</p>
+                        {% endif %}
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="drift_status" class="form-label">Driftsstatus</label>
+                        <select name="drift_status" id="drift_status" class="form-select" required>
+                            <option value="klar" {% if edit_pilledispenser and edit_pilledispenser['drift_status'] == 'klar' %}selected{% endif %}>Klar</option>
+                            <option value="offline" {% if not edit_pilledispenser or edit_pilledispenser['drift_status'] == 'offline' %}selected{% endif %}>Offline</option>
+                            <option value="fejl" {% if edit_pilledispenser and edit_pilledispenser['drift_status'] == 'fejl' %}selected{% endif %}>Fejl</option>
+                            <option value="vedligeholdelse" {% if edit_pilledispenser and edit_pilledispenser['drift_status'] == 'vedligeholdelse' %}selected{% endif %}>Vedligeholdelse</option>
+                        </select>
+                    </div>
+
+                    {% if edit_pilledispenser %}
+                    <div class="form-check mb-3">
+                        <input type="checkbox" name="aktiv" value="true" id="dispenserAktiv"
+                               class="form-check-input" {% if edit_pilledispenser['aktiv'] %}checked{% endif %}>
+                        <label for="dispenserAktiv" class="form-check-label">Aktiv</label>
+                    </div>
+
+                    <button type="submit" class="btn btn-warning w-100" {% if not borgere %}disabled{% endif %}>Gem ændringer</button>
+                    <a href="{{ url_for('pilledispensere') }}" class="btn btn-secondary w-100 mt-2">Annuller</a>
+                    {% else %}
+                    <button type="submit" class="btn btn-primary w-100" {% if not borgere %}disabled{% endif %}>Opret pilledispenser</button>
+                    {% endif %}
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12 col-lg-8">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <h2 class="h5 mb-3">Alle pilledispensere</h2>
+
+                {% if pilledispensere %}
+                <div class="table-responsive">
+                    <table class="table table-striped table-hover align-middle">
+                        <thead>
+                            <tr>
+                                <th scope="col">Dispenser</th>
+                                <th scope="col">Borger</th>
+                                <th scope="col">Status</th>
+                                <th scope="col">Tidspunkter</th>
+                                <th scope="col">Handling</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for pilledispenser in pilledispensere %}
+                            <tr>
+                                <td>
+                                    <strong class="text-break">{{ pilledispenser['enhed_id'] }}</strong>
+                                    <div class="small text-muted">ID: {{ pilledispenser['pilledispenser_id'] }} · {{ pilledispenser['antal_rum'] }} rum</div>
+                                </td>
+                                <td>
+                                    <a href="{{ url_for('borger_view', borger_id=pilledispenser['borger_id']) }}" class="text-break">{{ pilledispenser['borger_navn'] or 'Ikke angivet' }}</a>
+                                    <div class="small text-muted text-break">Kontaktperson: {{ pilledispenser['kontaktperson_navn'] or 'Ikke angivet' }}</div>
+                                </td>
+                                <td>
+                                    <div class="mb-1">{{ pilledispenser['drift_status']|capitalize }}</div>
+                                    {% if pilledispenser['aktiv'] %}
+                                    <span class="badge bg-success">Aktiv</span>
+                                    {% else %}
+                                    <span class="badge bg-secondary">Inaktiv</span>
+                                    {% endif %}
+                                </td>
+                                <td class="small">
+                                    <div class="text-muted">Senest set</div>
+                                    <div>{{ pilledispenser['seneste_set_at']|datetime_da if pilledispenser['seneste_set_at'] else 'Ikke registreret' }}</div>
+                                    <div class="text-muted mt-2">Oprettet</div>
+                                    <div>{{ pilledispenser['oprettet_at']|datetime_da }}</div>
+                                </td>
+                                <td>
+                                    <a href="{{ url_for('pilledispensere', edit_pilledispenser_id=pilledispenser['pilledispenser_id']) }}" class="btn btn-warning btn-sm">Rediger</a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-muted mb-0">Ingen pilledispensere fundet.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

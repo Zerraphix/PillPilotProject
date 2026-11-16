@@ -3,11 +3,21 @@
 from apiflask import APIBlueprint, Schema, abort
 from apiflask.fields import Boolean, DateTime, Email, Integer, String
 from apiflask.validators import Length
+from marshmallow import ValidationError
 
 from auth import auth
 from database import kontaktperson_db as database
+from password_validation import PASSWORD_ERROR, validate_password
 
 api = APIBlueprint("kontaktperson", __name__, url_prefix="/api/kontaktperson")
+
+
+def validate_new_password(password: str) -> None:
+    """Giv API'ens normale valideringsfejl, hvis passwordet bryder de fælles regler."""
+    try:
+        validate_password(password)
+    except ValueError as error:
+        raise ValidationError(str(error)) from error
 
 
 class KontaktpersonIn(Schema):
@@ -20,7 +30,12 @@ class KontaktpersonIn(Schema):
 
 class KontaktpersonCreate(KontaktpersonIn):
     """Ved oprettelse skal der også vælges et password."""
-    password = String(required=True, validate=Length(min=12, max=128), load_only=True)
+    password = String(
+        required=True,
+        validate=validate_new_password,
+        load_only=True,
+        metadata={"description": PASSWORD_ERROR},
+    )
 
 
 class KontaktpersonUpdate(KontaktpersonIn):
@@ -30,7 +45,12 @@ class KontaktpersonUpdate(KontaktpersonIn):
 
 class PasswordIn(Schema):
     """Et nyt password til den valgte kontaktperson."""
-    password = String(required=True, validate=Length(min=12, max=128), load_only=True)
+    password = String(
+        required=True,
+        validate=validate_new_password,
+        load_only=True,
+        metadata={"description": PASSWORD_ERROR},
+    )
 
 
 class KontaktpersonOut(Schema):
