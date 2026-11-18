@@ -1,25 +1,26 @@
-import asyncio
 import bluetooth
 import aioble
 
-# Samme UUID'er som paa XIAO-armbaandet
+
 SERVICE_UUID = bluetooth.UUID("9f8a1000-2233-4455-6677-8899aabbccdd")
 COMMAND_UUID = bluetooth.UUID("9f8a1001-2233-4455-6677-8899aabbccdd")
 BATTERY_UUID = bluetooth.UUID("9f8a1002-2233-4455-6677-8899aabbccdd")
 
 
-# Find armbaandet via Bluetooth
 async def find_armband():
-    async with aioble.scan(20000, interval_us=30000,
-                           window_us=30000, active=True) as scanner:
+    """Soeger efter Bluetooth-enheden PillPilotBand."""
+    async with aioble.scan(
+        20000, interval_us=30000, window_us=30000, active=True
+    ) as scanner:
         async for result in scanner:
             if result.name() == "PillPilotBand":
                 return result.device
+
     return None
 
 
-# Send vibrationskommando eller hent batterioplysninger
 async def armband_command(command):
+    """Sender en paamindelse eller laeser batteriet fra armbaandet."""
     try:
         device = await find_armband()
         if device is None:
@@ -37,6 +38,7 @@ async def armband_command(command):
                 if characteristic is None:
                     print("FEJL|BLE_COMMAND")
                     return
+
                 await characteristic.write(b"VIBRATE", response=True)
                 print("REMIND|SENDT")
 
@@ -45,6 +47,7 @@ async def armband_command(command):
                 if characteristic is None:
                     print("FEJL|BLE_BATTERY")
                     return
+
                 battery = await characteristic.read()
                 print("BATTERY|" + battery.decode())
 

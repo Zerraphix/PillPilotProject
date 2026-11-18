@@ -2,29 +2,28 @@ from machine import Pin
 from time import sleep_ms
 
 
-# Start Hall-sensoren
-
 def hall_init(gpio=27):
+    """Starter Hall-sensoren paa GPIO27 som standard."""
     return Pin(gpio, Pin.IN, Pin.PULL_UP)
 
 
-# Laes signalet
-
 def hall_read(sensor):
+    """Laeser Hall-sensorens digitale signal."""
     return sensor.value()
 
 
-# Registrer magneten
-
 def hall_detected(sensor):
+    """Returnerer True, naar magneten bliver registreret."""
     return hall_read(sensor) == 0
 
 
-# Kontroller at signalet er stabilt
-
 def hall_stable(sensor, delay_ms=30):
+    """Kontrollerer om magnetens signal er stabilt."""
     first = hall_detected(sensor)
     sleep_ms(delay_ms)
-    if hall_detected(sensor) == first:
+    second = hall_detected(sensor)
+
+    if first == second:
         return first
+
     return None
