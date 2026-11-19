@@ -15,6 +15,7 @@ dependencies = [
     "cachelib>=0.13,<0.14",
     "flask-wtf>=1.2,<2",
     "gunicorn>=27.0.1",
+    "pyserial>=3.5",
 ]
 
 [tool.uv]
