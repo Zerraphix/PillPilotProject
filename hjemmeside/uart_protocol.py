@@ -29,6 +29,15 @@ def parse_uart_message(raw_message):
 
     if not isinstance(message, dict):
         raise ValueError("Beskeden skal være et objekt")
+    
+    enhed_id = message.get("enhed_id")
+
+    if (
+        not isinstance(enhed_id, str)
+        or not enhed_id.strip()
+        or len(enhed_id) > 100
+    ):
+        raise ValueError("Manglende eller ugyldigt enhed_id")
 
     if not isinstance(message.get("type"), str) or not message["type"]:
         raise ValueError("Mangler type")
