@@ -1,7 +1,7 @@
 """Alle indloggede kontaktpersoner kan administrere alle borgere."""
 
 from apiflask import APIBlueprint, Schema, abort
-from apiflask.fields import Boolean, Date, DateTime, Integer, String, Nested
+from apiflask.fields import Boolean, Date, DateTime, Integer, String, Nested, Dict, Raw
 from apiflask.validators import Length, Range
 
 from auth import auth
@@ -11,6 +11,7 @@ from api.medicinplan_api import MedicinplanOut
 from database import medicinudlevering_db as udlevering_database
 from api.medicinudlevering_api import MedicinudleveringOut
 from database import pilledispenser_db as dispenser_database
+from live_status import get_live_status
 from api.pilledispenser_api import PilledispenserOut
 
 api = APIBlueprint("borger", __name__, url_prefix="/api/borger")
@@ -138,4 +139,36 @@ def oversigt(borger_id: int) -> dict:
         "pilledispensere": dispenser_database.all_pilledispensere(borger_id),
         "medicinplaner": medicinplan_database.all_medicinplaner(borger_id),
         "medicinudleveringer": udlevering_database.all_medicinudleveringer(borger_id),
+    }
+
+
+class BorgerLiveStatusOut(Schema):
+    """Seneste RAM-status fra dispenserens tilknyttede enheder."""
+    borger_id = Integer()
+    enhed_id = String(allow_none=True)
+    devices = Dict(keys=String(), values=Raw())
+
+
+@api.get("/<int:borger_id>/live-status")
+@api.auth_required(auth)
+@api.output(BorgerLiveStatusOut)
+def borger_live_status(borger_id: int) -> dict:
+    """Hent live-status for en borger. Kræver samme login som resten af API'et.
+
+    I denne prototype kan alle aktive kontaktpersoner se alle borgere,
+    som angivet i auth.py. Vi ændrer ikke adgangsmodellen her.
+    """
+    borger = database.get_borger(borger_id)
+    if borger is None:
+        abort(404, "Borgeren findes ikke")
+
+    dispensere = dispenser_database.all_pilledispensere(borger_id)
+    if not dispensere:
+        return {"borger_id": borger_id, "enhed_id": None, "devices": {}}
+
+    enhed_id = dispensere[0]["enhed_id"]
+    return {
+        "borger_id": borger_id,
+        "enhed_id": enhed_id,
+        "devices": get_live_status(enhed_id),
     }
