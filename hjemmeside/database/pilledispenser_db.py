@@ -123,3 +123,21 @@ def leveringer_tilbage(borger_id: int | None = None) -> list[dict]:
                     OR p.borger_id = {borger_id})
             ORDER BY planlagte_tilbage, p.pilledispenser_id
         """).fetchall()
+
+
+def get_enhed_by_key_hash(api_key_hash: str) -> dict | None:
+    """Find en aktiv dispenser via dens API-nøglehash."""
+    with get_connection() as conn:
+        return conn.execute("""
+            SELECT
+                p.pilledispenser_id,
+                p.enhed_id,
+                p.borger_id
+            FROM public.pilledispenser AS p
+            JOIN public.borger AS b
+                ON b.borger_id = p.borger_id
+            WHERE p.api_key_hash = %s
+                AND p.aktiv = TRUE
+                AND b.aktiv = TRUE
+        """, (api_key_hash,)).fetchone()
+
