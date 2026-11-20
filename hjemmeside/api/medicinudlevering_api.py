@@ -1,12 +1,30 @@
 """Manuel oprettelse og statusregistrering for alle borgeres udleveringer."""
 
-from apiflask import APIBlueprint, Schema, abort
+from apiflask import APIBlueprint, Schema, abort, MultiAuth
 from apiflask.fields import Date, DateTime, Integer, List, String
 from apiflask.validators import Length, Range
 from marshmallow.fields import AwareDateTime
 
 from auth import auth
+from device_auth import device_auth
 from database import medicinudlevering_db as database
+from database import udleveringsstatus_db
+
+begge_auth = MultiAuth(auth, device_auth)
+
+
+def aktuel_dispenser():
+    """Returnerer enheden, hvis requesten kommer fra ESP32."""
+    bruger = begge_auth.current_user
+
+    if (
+        bruger
+        and "pilledispenser_id" in bruger
+        and "kontaktperson_id" not in bruger
+    ):
+        return bruger
+
+    return None
 
 api = APIBlueprint("medicinudlevering", __name__, url_prefix="/api/medicinudlevering")
 
@@ -60,24 +78,54 @@ class MedicinudleveringOut(Schema):
 
 
 @api.get("")
-@api.auth_required(auth)
+@api.auth_required(begge_auth)
 @api.input(MedicinudleveringFilter, location="query")
 @api.output(MedicinudleveringOut(many=True))
 def get_all(query_data: dict) -> list[dict]:
-    """Hent alle udleveringer med valgfri filtrering på borger og status."""
-    return database.all_medicinudleveringer(query_data["borger_id"], query_data["status_id"])
+    """Hent udleveringer. Enheder får kun deres egne."""
 
+    dispenser = aktuel_dispenser()
+    borger_id = query_data["borger_id"]
+
+    if dispenser:
+        if (
+            borger_id is not None
+            and borger_id != dispenser["borger_id"]
+        ):
+            abort(403, "Enheden kan kun hente egne udleveringer")
+
+        borger_id = dispenser["borger_id"]
+
+    rows = database.all_medicinudleveringer(
+        borger_id, query_data["status_id"]
+    )
+
+    if dispenser:
+        rows = [
+            row for row in rows
+            if row["pilledispenser_id"]
+            == dispenser["pilledispenser_id"]
+        ]
+
+    return rows
 
 @api.get("/<int:udlevering_id>")
-@api.auth_required(auth)
+@api.auth_required(begge_auth)
 @api.output(MedicinudleveringOut)
 def get_one(udlevering_id: int) -> dict:
-    """Hent en enkelt udlevering."""
-    row = database.get_medicinudlevering(udlevering_id)
-    if row is None:
-        abort(404, "Udleveringen findes ikke")
-    return row
+    """Hent én udlevering med kontrol af dispenser."""
 
+    row = database.get_medicinudlevering(udlevering_id)
+    dispenser = aktuel_dispenser()
+
+    if row is None or (
+        dispenser
+        and row["pilledispenser_id"]
+        != dispenser["pilledispenser_id"]
+    ):
+        abort(404, "Udleveringen findes ikke")
+
+    return row
 
 @api.post("/fyldning")
 @api.auth_required(auth)
@@ -96,15 +144,44 @@ def create(json_data: dict) -> dict:
 
 
 @api.patch("/<int:udlevering_id>/status")
-@api.auth_required(auth)
+@api.auth_required(begge_auth)
 @api.input(StatusIn)
 @api.output(MedicinudleveringOut)
 def change_status(udlevering_id: int, json_data: dict) -> dict:
-    """Registrér et resultat manuelt. Brug statusopslaget til at vælge id'et."""
-    changed = database.update_status(
-        udlevering_id, json_data["status_id"],
-        json_data["tidspunkt"], json_data["fejlbeskrivelse"]
-    )
+    """Registrér status på en udlevering."""
+
+    dispenser = aktuel_dispenser()
+    required_pilledispenser_id = None
+
+    if dispenser:
+        status = udleveringsstatus_db.get_status(
+            json_data["status_id"]
+        )
+
+        if (
+            status is None
+            or status["kode"] != "udleveret"
+            or json_data["tidspunkt"] is not None
+            or json_data["fejlbeskrivelse"] is not None
+        ):
+            abort(403, "Enheden må kun registrere 'udleveret'")
+
+        required_pilledispenser_id = dispenser[
+            "pilledispenser_id"
+        ]
+
+    try:
+        changed = database.update_status(
+            udlevering_id,
+            json_data["status_id"],
+            json_data["tidspunkt"],
+            json_data["fejlbeskrivelse"],
+            required_pilledispenser_id=required_pilledispenser_id,
+        )
+    except PermissionError:
+        abort(404, "Udleveringen findes ikke")
+
     if not changed:
         abort(404, "Udleveringen findes ikke")
+
     return database.get_medicinudlevering(udlevering_id)

@@ -1,11 +1,13 @@
 """Opslag i statusser. Statuskoderne er faste, fordi Python-logikken bruger dem."""
 
-from apiflask import APIBlueprint, Schema, abort
+from apiflask import APIBlueprint, Schema, abort, MultiAuth
 from apiflask.fields import Integer, String
 
 from auth import auth
+from device_auth import device_auth
 from database import udleveringsstatus_db as database
 
+begge_auth = MultiAuth(auth, device_auth)
 api = APIBlueprint("udleveringsstatus", __name__, url_prefix="/api/udleveringsstatus")
 
 
@@ -17,7 +19,7 @@ class UdleveringsstatusOut(Schema):
 
 
 @api.get("")
-@api.auth_required(auth)
+@api.auth_required(begge_auth)
 @api.output(UdleveringsstatusOut(many=True))
 def get_all() -> list[dict]:
     """Hent alle seks udleveringsstatusser."""
