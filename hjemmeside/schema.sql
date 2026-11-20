@@ -88,6 +88,11 @@ CREATE TABLE public.pilledispenser (
 );
 
 
+-- Et nøglehash skal kun tilhøre én pilledispenser.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_pilledispenser_api_key_hash
+ON public.pilledispenser (api_key_hash)
+WHERE api_key_hash IS NOT NULL;
+
 -- MEDICINPLAN
 
 CREATE TABLE public.medicinplan (
