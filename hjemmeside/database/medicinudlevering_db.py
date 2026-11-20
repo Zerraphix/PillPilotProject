@@ -114,8 +114,12 @@ def create_fyldning(
 
 
 def update_status(
-    udlevering_id: int, status_id: int,
-    tidspunkt: datetime | None = None, fejlbeskrivelse: str | None = None
+    udlevering_id: int,
+    status_id: int,
+    tidspunkt: datetime | None = None,
+    fejlbeskrivelse: str | None = None,
+    *,
+    required_pilledispenser_id: int | None = None
 ) -> bool:
     """Registrér status med enkle overgangsregler og bevar første registrerede tidspunkt.
 
@@ -132,6 +136,13 @@ def update_status(
         """).fetchone()
         if row is None:
             return False
+        if (
+            required_pilledispenser_id is not None
+            and row["pilledispenser_id"] != required_pilledispenser_id
+        ):
+            raise PermissionError(
+                "Udleveringen tilhører ikke denne dispenser"
+            )
         status = conn.execute(t"""
             SELECT kode FROM public.udleveringsstatus WHERE status_id = {status_id}
         """).fetchone()
