@@ -707,6 +707,40 @@ def update_borger(borger_id):
     return redirect(settings_url)
 
 
+@app.get("/borger/<int:borger_id>/live-status")
+@app.doc(hide=True)
+@login_required
+def borger_live_status_web(borger_id):
+    """Henter live-status fra API til hjemmesiden."""
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/borger/{borger_id}/live-status",
+            headers={
+                "Authorization": f"Bearer {session['token']}"
+            },
+            timeout=5,
+            allow_redirects=False,
+        )
+    except requests.RequestException:
+        return {"message": "Kunne ikke kontakte API"}, 503
+
+    if response.status_code == 404:
+        return {"message": "Borgeren findes ikke"}, 404
+
+    if response.status_code == 401:
+        return {"message": "Login er udløbet"}, 401
+
+    if response.status_code != 200:
+        return {"message": "Kunne ikke hente live-status"}, 502
+
+    try:
+        data = response.json()
+    except ValueError:
+        return {"message": "Ugyldigt API-svar"}, 502
+
+    return data
+
+
 # Medicinplan routes
 @app.route("/borger/<int:borger_id>/medicinplan/create", methods=["POST"])
 @app.doc(hide=True)
