@@ -160,11 +160,21 @@ def change_status(udlevering_id: int, json_data: dict) -> dict:
 
         if (
             status is None
-            or status["kode"] != "udleveret"
+            or status["kode"] not in (
+                "udleveret",
+                "ikke_afhentet",
+                "afhentet",
+                "fejl"
+            )
             or json_data["tidspunkt"] is not None
-            or json_data["fejlbeskrivelse"] is not None
         ):
-            abort(403, "Enheden må kun registrere 'udleveret'")
+            abort(403, "Enheden må kun registrere udleveret, ikke_afhentet, afhentet eller fejl")
+
+        if (
+            json_data["fejlbeskrivelse"] is not None
+            and status["kode"] != "fejl"
+        ):
+            abort(400, "Fejlbeskrivelse bruges kun ved status fejl")
 
         required_pilledispenser_id = dispenser[
             "pilledispenser_id"
@@ -180,6 +190,8 @@ def change_status(udlevering_id: int, json_data: dict) -> dict:
         )
     except PermissionError:
         abort(404, "Udleveringen findes ikke")
+    except ValueError as e:
+        abort(400, str(e))
 
     if not changed:
         abort(404, "Udleveringen findes ikke")
