@@ -1,4 +1,3 @@
-
 import json
 from time import sleep_ms
 from hx711_sensor import hx711_init, hx711_average, hx711_grams
@@ -10,7 +9,7 @@ COORDINATOR_MAC = "68:25:DD:EE:CA:40"
 OFFSET = None
 SCALE = None
 
-link, wifi = espnow_init(6)
+link, wifi = espnow_init(10)
 peer = espnow_add_peer(link, COORDINATOR_MAC)
 
 dt, sck = hx711_init()
@@ -29,7 +28,7 @@ while True:
 
         message = json.dumps({
             "type": "status",
-            "device": "vægt",
+            "device": "vaegt",
             "data": data
         })
 

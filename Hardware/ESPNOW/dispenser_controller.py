@@ -20,7 +20,7 @@ def controller_init():
         "slot": None,
         "last_id": None,
 
-        # Vaegtsensor
+        # Vægtsensor
         "weight_g": None,
         "weight_raw": None,
         "weight_time": None
