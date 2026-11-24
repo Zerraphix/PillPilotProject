@@ -13,6 +13,7 @@ try:
 except ImportError:
     import urequests as requests
 
+import config
 from config import WIFI_SSID, WIFI_PASSWORD, API_URL, DEVICE_API_KEY
 
 
@@ -37,10 +38,13 @@ def connect_wifi(timeout_seconds=20):
     return wlan
 
 
-def _api_request(method, path, data=None):
+def _api_request(method, path, data=None, with_date=False):
     url = API_URL.rstrip("/") + path
     headers = {"X-Device-Key": DEVICE_API_KEY, "Accept": "application/json"}
-    kwargs = {"headers": headers}
+    kwargs = {"headers": headers, "timeout": getattr(config, "API_TIMEOUT_SECONDS", 5)}
+    if with_date:
+        headers["Cache-Control"] = "no-cache"
+    server_date = None
 
     if data is not None:
         headers["Content-Type"] = "application/json"
@@ -50,6 +54,23 @@ def _api_request(method, path, data=None):
     try:
         response = requests.request(method, url, **kwargs)
         status = response.status_code
+        if with_date:
+            response_headers = getattr(response, "headers", None) or {}
+            if hasattr(response_headers, "items"):
+                pairs = response_headers.items()
+            else:
+                pairs = []
+                for line in response_headers:
+                    if isinstance(line, bytes):
+                        line = line.decode()
+                    if ":" in line:
+                        pairs.append(line.split(":", 1))
+            for key, value in pairs:
+                if isinstance(key, bytes):
+                    key = key.decode()
+                if key.lower() == "date":
+                    server_date = (value.decode() if isinstance(value, bytes) else value).strip()
+                    break
         body = response.text
     finally:
         if response is not None:
@@ -58,12 +79,13 @@ def _api_request(method, path, data=None):
     if status < 200 or status >= 300:
         raise RuntimeError("API %s %s gav HTTP %s: %s" % (
             method, path, status, body[:240]))
-    return json.loads(body) if body else None
+    result = json.loads(body) if body else None
+    return (result, server_date) if with_date else result
 
 
-def get_udleveringer():
+def get_udleveringer(with_date=False):
     """API'en skal begrænse resultatet til denne godkendte dispenser."""
-    return _api_request("GET", "/api/medicinudlevering")
+    return _api_request("GET", "/api/medicinudlevering", with_date=with_date)
 
 
 def get_udlevering(udlevering_id):
@@ -75,28 +97,15 @@ def get_udleveringsstatusser():
 
 
 def get_naeste_planlagte_udlevering():
+    """Rawdata, uden vurdering af om tidspunktet er overskredet."""
+    from delivery_schedule import parse_iso
     planlagte = [u for u in get_udleveringer()
                  if u.get("status_kode") == "planlagt"]
-    planlagte.sort(key=lambda u: u["planlagt_tid"])
+    planlagte.sort(key=lambda u: parse_iso(u["planlagt_tid"]))
     return planlagte[0] if planlagte else None
 
 
 def registrer_udleveret(udlevering_id):
-    """Kald kun, NÅR den fysiske dispenser faktisk har udleveret.
-
-    Til udvikling kan den kaldes manuelt på syntetiske databaseposter.
-    """
-    statusser = get_udleveringsstatusser()
-    status_id = None
-    for row in statusser:
-        if row.get("kode") == "udleveret":
-            status_id = row["status_id"]
-            break
-    if status_id is None:
-        raise ValueError("Statuskoden 'udleveret' findes ikke")
-
-    return _api_request(
-        "PATCH",
-        "/api/medicinudlevering/%s/status" % int(udlevering_id),
-        {"status_id": status_id},
-    )
+    """Bagudkompatibilitet; kraever fysisk bekraeftelse."""
+    from delivery_status import set_udleveringsstatus, UDLEVERET
+    return set_udleveringsstatus(udlevering_id, UDLEVERET)
