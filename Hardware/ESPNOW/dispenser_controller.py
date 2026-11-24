@@ -1,46 +1,134 @@
+import json
 from time import ticks_ms, ticks_diff
 from espnow_link import espnow_receive
 from stepper_motor import stepper_step, stepper_next, stepper_stop
 
 
+# ESP-NOW MAC-adresser
 HALL_MAC = "68:25:DD:E8:58:1C"
+WEIGHT_MAC = "68:25:DD:E9:AF:18"
+
 MAX_HOME_STEPS = 4400
+SENSOR_TIMEOUT_MS = 3000
 
 
 def controller_init():
-    """Opretter controllerens oplysninger om sensor og medicinrum."""
-    return {"hall": None, "hall_time": None, "slot": None, "last_id": None}
+    """Initialiserer dispenserens tilstand."""
+    return {
+        "hall": None,
+        "hall_time": None,
+        "slot": None,
+        "last_id": None,
+
+        # Vaegtsensor
+        "weight_g": None,
+        "weight_raw": None,
+        "weight_time": None
+    }
 
 
 def controller_receive(link, state, timeout_ms=0):
-    """Modtager Hall-sensorens magnetstatus via ESP-NOW."""
+    """Modtager beskeder fra Hall- og vaegtcontrolleren."""
     data = espnow_receive(link, timeout_ms)
+
     if data is None:
         return False
 
     sender, message = data
-    if sender.upper() != HALL_MAC:
-        return False
+    sender = sender.upper()
 
-    if message != "HALL|0" and message != "HALL|1":
-        return False
+    # HALL-CONTROLLER
+    if sender == HALL_MAC:
+        if message not in ("HALL|0", "HALL|1"):
+            return False
 
-    state["hall"] = message == "HALL|1"
-    state["hall_time"] = ticks_ms()
-    return True
+        state["hall"] = message == "HALL|1"
+        state["hall_time"] = ticks_ms()
+        return True
+
+    # VAEGT-CONTROLLER
+    if sender == WEIGHT_MAC:
+        try:
+            payload = json.loads(message)
+
+            if not isinstance(payload, dict):
+                return False
+
+            if payload.get("type") != "status":
+                return False
+
+            if payload.get("device") != "vaegt":
+                return False
+
+            values = payload.get("data")
+
+            if not isinstance(values, dict):
+                return False
+
+            if "weight_g" in values:
+                weight = values["weight_g"]
+
+                if isinstance(weight, bool) or not isinstance(
+                    weight, (int, float)
+                ):
+                    return False
+
+                if not (-1000 <= weight <= 1000):
+                    return False
+
+                state["weight_g"] = weight
+                state["weight_raw"] = None
+
+            elif "raw_value" in values:
+                raw = values["raw_value"]
+
+                if isinstance(raw, bool) or not isinstance(
+                    raw, (int, float)
+                ):
+                    return False
+
+                state["weight_raw"] = raw
+                state["weight_g"] = None
+
+            else:
+                return False
+
+            state["weight_time"] = ticks_ms()
+
+            return True
+
+        except (ValueError, TypeError, KeyError):
+            return False
+
+    return False
 
 
 def controller_hall_online(state):
-    """Kontrollerer om Hall-sensoren har svaret for nylig."""
+    """Kontrollerer om Hall-controlleren er online."""
     last_time = state["hall_time"]
+
     if last_time is None:
         return False
 
-    return ticks_diff(ticks_ms(), last_time) < 3000
+    return ticks_diff(
+        ticks_ms(), last_time
+    ) < SENSOR_TIMEOUT_MS
+
+
+def controller_weight_online(state):
+    """Kontrollerer om vaegtcontrolleren er online."""
+    last_time = state["weight_time"]
+
+    if last_time is None:
+        return False
+
+    return ticks_diff(
+        ticks_ms(), last_time
+    ) < SENSOR_TIMEOUT_MS
 
 
 def controller_home(link, motor, state):
-    """Drejer dispenseren frem til magnetens nulpunkt."""
+    """Drejer dispenseren til magnetens nulpunkt."""
     state["slot"] = None
 
     if not controller_hall_online(state):
@@ -65,6 +153,7 @@ def controller_home(link, motor, state):
                 state["slot"] = 0
                 print("HOME|OK")
                 return True
+
     finally:
         stepper_stop(motor)
 
@@ -73,7 +162,7 @@ def controller_home(link, motor, state):
 
 
 def controller_next(motor, state, command_id):
-    """Drejer til naeste medicinrum, hvis kommandoen er gyldig."""
+    """Drejer til naeste medicinrum."""
     if state["slot"] is None:
         print("FEJL|FIND_HOME_FOERST")
         return False
@@ -91,22 +180,55 @@ def controller_next(motor, state, command_id):
         return False
 
     stepper_next(motor, 10)
+
     state["slot"] = (state["slot"] + 1) % 8
     state["last_id"] = command_id
 
-    print("NEXT|UDFOERT|%s|RUM_%d" % (command_id, state["slot"]))
+    print(
+        "NEXT|UDFOERT|%s|RUM_%d" %
+        (command_id, state["slot"])
+    )
+
     return True
 
 
+def controller_status(state):
+    """Udskriver samlet systemstatus."""
+
+    hall_online = controller_hall_online(state)
+    weight_online = controller_weight_online(state)
+
+    status = {
+        "type": "status",
+        "device": "dispenser",
+        "data": {
+            "slot": state["slot"],
+            "hall": state["hall"],
+            "hall_online": hall_online,
+            "weight_online": weight_online,
+            "weight_g": (
+                state["weight_g"] if weight_online else None
+            ),
+            "weight_raw": (
+                state["weight_raw"] if weight_online else None
+            )
+        }
+    }
+
+    print(json.dumps(status))
+
+
 def controller_command(command, link, motor, state):
-    """Udfoerer HOME, NEXT og STATUS fra Linux-serveren."""
+    """Behandler kommandoer fra Linux-serveren."""
+
     if command == "HOME":
         controller_home(link, motor, state)
+
     elif command.startswith("NEXT|"):
         controller_next(motor, state, command[5:])
+
     elif command == "STATUS":
-        print("STATUS|RUM=%s|HALL=%s|ONLINE=%s" % (
-            state["slot"], state["hall"], controller_hall_online(state)
-        ))
+        controller_status(state)
+
     else:
         print("FEJL|UKENDT_KOMMANDO")

@@ -23,6 +23,7 @@ while True:
 
         if changed or time_to_send:
             try:
+                print("Hall status:", status)
                 sent = espnow_send(link, peer, "HALL|%d" % status)
 
                 if sent:
