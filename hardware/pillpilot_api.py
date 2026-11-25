@@ -32,9 +32,10 @@ def connect_wifi(timeout_seconds=20):
             time.sleep(1)
 
     if not wlan.isconnected():
-        raise OSError("WiFi kunne ikke forbinde, status: %s" % wlan.status())
+        raise OSError("WiFi connection failed, status: %s" % wlan.status())
 
-    print("WiFi forbundet:", wlan.ifconfig()[0])
+    wlan.config(pm=network.WLAN.PM_NONE)
+    print("WiFi connected:", wlan.ifconfig()[0])
     return wlan
 
 
@@ -77,7 +78,7 @@ def _api_request(method, path, data=None, with_date=False):
             response.close()
 
     if status < 200 or status >= 300:
-        raise RuntimeError("API %s %s gav HTTP %s: %s" % (
+        raise RuntimeError("API %s %s returned HTTP %s: %s" % (
             method, path, status, body[:240]))
     result = json.loads(body) if body else None
     return (result, server_date) if with_date else result
@@ -94,18 +95,3 @@ def get_udlevering(udlevering_id):
 
 def get_udleveringsstatusser():
     return _api_request("GET", "/api/udleveringsstatus")
-
-
-def get_naeste_planlagte_udlevering():
-    """Rawdata, uden vurdering af om tidspunktet er overskredet."""
-    from delivery_schedule import parse_iso
-    planlagte = [u for u in get_udleveringer()
-                 if u.get("status_kode") == "planlagt"]
-    planlagte.sort(key=lambda u: parse_iso(u["planlagt_tid"]))
-    return planlagte[0] if planlagte else None
-
-
-def registrer_udleveret(udlevering_id):
-    """Bagudkompatibilitet; kraever fysisk bekraeftelse."""
-    from delivery_status import set_udleveringsstatus, UDLEVERET
-    return set_udleveringsstatus(udlevering_id, UDLEVERET)
