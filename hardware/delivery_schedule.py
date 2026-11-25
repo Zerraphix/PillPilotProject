@@ -2,10 +2,8 @@
 
 Ingen motor- eller sensorhandlinger. Alle tider sammenlignes i UTC.
 """
-from time import ticks_ms, ticks_diff
 import config
 from pillpilot_api import get_udleveringer
-from delivery_status import FEJL, set_udleveringsstatus
 
 MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 
@@ -80,64 +78,18 @@ def copenhagen_day(timestamp):
     return (timestamp + offset) // 86400000
 
 
-def schedule_init():
-    return {"last_time": None, "last_tick": None, "next": None,
-            "due": [], "missed": [], "ready": False}
-
-
-def schedule_poll(state):
-    """Tidligere kalenderdage -> FEJL; i dag -> klar/vent.
-
-    Kun planlaegning. Ingen motorhandling eller automatisk dosering.
-    """
-    state.update({"next": None, "due": [], "missed": [], "ready": False})
-    try:
-        rows, date = get_udleveringer(with_date=True)
-        now = parse_http_date(date)
-        tick = ticks_ms()
-        if state["last_time"] is not None and now < state["last_time"]:
-            raise ValueError("Serverens ur gik baglaens")
-        state["last_time"] = now
-        state["last_tick"] = tick
-        today = copenhagen_day(now)
-        # Valider alle planlagte poster foer nogen skrivning.
-        planned = [(parse_iso(row["planlagt_tid"]), row) for row in rows
-                   if row.get("status_kode") == "planlagt"]
-        planned.sort(key=lambda item: item[0])
-        ids = set()
-        for planned_time, row in planned:
-            ident = row["udlevering_id"]
-            if type(ident) is not int or ident <= 0 or ident in ids:
-                raise ValueError("Ugyldigt/dubleret udlevering_id")
-            ids.add(ident)
-        for planned_time, row in planned:
-            ident = row["udlevering_id"]
-            if copenhagen_day(planned_time) < today:
-                state["missed"].append(row)
-                if getattr(config, "MARK_MISSED_AS_FAILED", False):
-                    result = set_udleveringsstatus(ident, FEJL, forventet_tid=row["planlagt_tid"])
-                    if result is None:
-                        print("API|PLAN_AENDRET|ID=%s" % ident)
-                        return None  # hent planen igen foer den kan bruges
-                    print("API|FEJL_REGISTRERET|ID=%s|TID=%s" % (ident, row["planlagt_tid"]))
-                else:
-                    print("API|FORPASSET_TEST|ID=%s|TID=%s" % (ident, row["planlagt_tid"]))
-                continue
-            if state["next"] is None:
-                state["next"] = row
-            if planned_time <= now:
-                state["due"].append(row)
-                print("API|FORFALDEN_I_DAG|ID=%s|AFVENTER_SENSORLOGIK" % ident)
-        if len(state["due"]) > 1:
-            print("API|FLERE_FORFALDNE_I_DAG|INGEN_AUTOMATISK_UDLEVERING")
-        if state["next"] is not None:
-            row = state["next"]
-            print("API|NAESTE|ID=%s|TID=%s" % (row["udlevering_id"], row["planlagt_tid"]))
-        else:
-            print("API|INGEN_PLANLAGTE_UDLEVERINGER")
-        state["ready"] = True
-        return state["next"]
-    except Exception as error:
-        state.update({"next": None, "due": [], "missed": [], "ready": False})
-        print("FEJL|API_TID_ELLER_STATUS|" + str(error))
-        return None
+def get_schedule():
+    """Return the next planned delivery, overdue deliveries and server time."""
+    rows, date = get_udleveringer(with_date=True)
+    now = parse_http_date(date)
+    planned = sorted(
+        [row for row in rows if row["status_kode"] == "planlagt"],
+        key=lambda row: parse_iso(row["planlagt_tid"])
+    )
+    missed = [row for row in planned
+              if copenhagen_day(parse_iso(row["planlagt_tid"])) < copenhagen_day(now)]
+    due = [row for row in planned if row not in missed
+           and parse_iso(row["planlagt_tid"]) <= now]
+    open_deliveries = [row for row in rows
+                       if row["status_kode"] in ("udleveret", "ikke_afhentet")]
+    return planned[0] if planned else None, missed, due, open_deliveries, now
