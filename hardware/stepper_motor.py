@@ -2,7 +2,7 @@ from machine import Pin
 from time import sleep_ms
 
 
-MOTOR_SPEED = 10
+MOTOR_SPEED = 3
 STEPS_PER_REV = 4096
 COMPARTMENTS = 8
 
