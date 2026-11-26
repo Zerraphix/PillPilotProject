@@ -26,6 +26,13 @@ def read_uart(port: str, baudrate: int = 115200) -> None:
             raw = uart.readline(MAX_MESSAGE_SIZE + 2)
             if not raw:
                 continue
+            
+            if not raw.strip().startswith(b"{"):
+                logger.info(
+                    "ESP32: %s",
+                    raw.decode("utf-8", errors="replace").strip()
+                )
+                continue
 
             if not raw.endswith(b"\n"):
                 logger.warning("UART: ufuldstændig eller for lang besked")

@@ -27,6 +27,7 @@ from api.kontaktperson_api import KontaktpersonOut, api as kontaktperson_api
 from api.medicinplan_api import api as medicinplan_api
 from api.medicinudlevering_api import api as medicinudlevering_api
 from api.pilledispenser_api import api as pilledispenser_api
+from api.enhed_api import api as enhed_api
 from api.udleveringsstatus_api import api as udleveringsstatus_api
 from password_validation import (
     PASSWORD_ERROR,
@@ -153,7 +154,7 @@ app.register_blueprint(medicinplan_api)
 app.register_blueprint(medicinudlevering_api)
 app.register_blueprint(pilledispenser_api)
 app.register_blueprint(udleveringsstatus_api)
-
+app.register_blueprint(enhed_api)
 
 class LoginIn(Schema):
     """Angiv password og enten email eller kontaktperson_id, ikke begge."""
