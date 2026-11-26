@@ -7,58 +7,106 @@ SERVICE_UUID = bluetooth.UUID(config.BLE_SERVICE_UUID)
 COMMAND_UUID = bluetooth.UUID(config.BLE_COMMAND_UUID)
 BATTERY_UUID = bluetooth.UUID(config.BLE_BATTERY_UUID)
 
+connection = None
+command_char = None
+battery_char = None
+
 
 async def find_armband():
-    """Find the bracelet by its configured Bluetooth name."""
+    print("BLE|SCANNING")
+
     async with aioble.scan(
-        getattr(config, "BLE_SCAN_MS", 5000),
-        interval_us=30000, window_us=15000, active=True
+        10000,
+        interval_us=30000,
+        window_us=30000,
+        active=False
     ) as scanner:
         async for result in scanner:
-            if result.name() == config.BLE_DEVICE_NAME:
+            if SERVICE_UUID in result.services():
+                print("BLE|ARMBAND_FOUND")
                 return result.device
+
     return None
 
 
+async def disconnect_armband():
+    global connection, command_char, battery_char
+
+    command_char = None
+    battery_char = None
+
+    if connection is not None:
+        if connection.is_connected():
+            await connection.disconnect(timeout_ms=5000)
+
+    connection = None
+
+
+async def connect_armband():
+    global connection, command_char, battery_char
+
+    if connection is not None and connection.is_connected():
+        if command_char is not None and battery_char is not None:
+            return True
+
+    await disconnect_armband()
+
+    device = await find_armband()
+
+    if device is None:
+        print("ERROR|ARMBAND_NOT_FOUND")
+        return False
+
+    print("BLE|CONNECTING")
+    connection = await device.connect(timeout_ms=15000)
+
+    service = await connection.service(SERVICE_UUID)
+
+    if service is None:
+        raise RuntimeError("BLE service not found")
+
+    command_char = await service.characteristic(COMMAND_UUID)
+    battery_char = await service.characteristic(BATTERY_UUID)
+
+    if command_char is None or battery_char is None:
+        raise RuntimeError("BLE characteristic not found")
+
+    print("BLE|CONNECTED")
+    return True
+
+
 async def armband_command(command):
-    """Send a vibration command or read battery status."""
     if command not in ("REMIND", "BATTERY"):
         print("ERROR|UNKNOWN_BLE_COMMAND")
         return None
+
     try:
-        device = await find_armband()
-        if device is None:
-            print("ERROR|ARMBAND_NOT_FOUND")
+        if not await connect_armband():
             return None
 
-        async with await device.connect(timeout_ms=15000) as connection:
-            service = await connection.service(SERVICE_UUID)
-            if service is None:
-                print("ERROR|BLE_SERVICE")
-                return None
+        if command == "REMIND":
+            await command_char.write(
+                b"VIBRATE",
+                response=True,
+                timeout_ms=5000
+            )
 
-            if command == "REMIND":
-                characteristic = await service.characteristic(COMMAND_UUID)
-                if characteristic is None:
-                    print("ERROR|BLE_COMMAND")
-                    return None
-                await characteristic.write(b"VIBRATE", response=True)
-                print("REMIND|SENT")
-                return True
+            print("REMIND|SENT")
+            return True
 
-            characteristic = await service.characteristic(BATTERY_UUID)
-            if characteristic is None:
-                print("ERROR|BLE_BATTERY")
-                return None
-            battery = await characteristic.read()
+        if command == "BATTERY":
+            battery = await battery_char.read(timeout_ms=5000)
             value = battery.decode()
+
             print("BATTERY|" + value)
             return value
+
     except Exception as error:
         print("ERROR|BLE", repr(error))
-        return None
-    finally:
+
         try:
-            aioble.stop()
-        except Exception as error:
-            print("ERROR|BLE_STOP", repr(error))
+            await disconnect_armband()
+        except Exception as disconnect_error:
+            print("ERROR|BLE_DISCONNECT", repr(disconnect_error))
+
+        return None

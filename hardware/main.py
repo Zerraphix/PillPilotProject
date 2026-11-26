@@ -85,7 +85,18 @@ async def main():
         gc.collect()
         print("MEMORY|FREE", gc.mem_free())
 
-        await armband_command("BATTERY")
+        for attempt in range(3):
+            print("BLE|STARTUP_ATTEMPT", attempt + 1)
+
+            result = await armband_command("BATTERY")
+
+            if result is not None:
+                break
+
+            gc.collect()
+            await asyncio.sleep(2)
+        else:
+            print("WARNING|ARMBAND_OFFLINE")
 
         band_task = asyncio.create_task(armband_loop())
         print("MAIN|STARTED|MAC=" + espnow_mac(wifi))
