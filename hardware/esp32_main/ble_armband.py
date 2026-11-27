@@ -51,7 +51,6 @@ async def connect_armband():
 
     await disconnect_armband()
 
-    device = await find_armband()
     # Connect directly using the known MAC address.
     device = aioble.Device(
         config.BLE_ADDRESS_TYPE,
