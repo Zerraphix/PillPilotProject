@@ -7,7 +7,7 @@ from threading import Lock
 live_data = {}
 lock = Lock()
 
-OFFLINE_TIMEOUT = 10
+OFFLINE_TIMEOUT = 60
 
 
 def update_live_status(message):
