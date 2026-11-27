@@ -20,7 +20,7 @@ SEQUENCE = (
 
 def stepper_init():
     """Starter motorens fire styreben paa controlleren."""
-    pins = [Pin(number, Pin.OUT, value=0) for number in (16, 17, 18, 19)]
+    pins = [Pin(number, Pin.OUT, value=0) for number in (32, 33, 25, 26)]
     return {"pins": pins, "phase": 0}
 
 
@@ -61,3 +61,5 @@ def stepper_stop(motor):
     """Slukker signalerne til stepmotoren."""
     for pin in motor["pins"]:
         pin.value(0)
+        
+    
