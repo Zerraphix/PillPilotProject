@@ -52,12 +52,14 @@ async def connect_armband():
     await disconnect_armband()
 
     device = await find_armband()
+    # Connect directly using the known MAC address.
+    device = aioble.Device(
+        config.BLE_ADDRESS_TYPE,
+        config.BLE_MAC_ADDRESS
+    )
 
-    if device is None:
-        print("ERROR|ARMBAND_NOT_FOUND")
-        return False
+    print("BLE|CONNECTING|" + config.BLE_MAC_ADDRESS)
 
-    print("BLE|CONNECTING")
     connection = await device.connect(timeout_ms=15000)
 
     service = await connection.service(SERVICE_UUID)

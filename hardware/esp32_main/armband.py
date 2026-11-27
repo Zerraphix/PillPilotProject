@@ -40,7 +40,7 @@ async def armband_command(command):
 
 async def armband_loop():
     global last_reminder
-    last_battery = ticks_ms()
+    last_battery = None
     battery_interval = getattr(config, "ARMBAND_INTERVAL_SECONDS", 30) * 1000
 
     while True:
