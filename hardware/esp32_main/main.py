@@ -3,9 +3,9 @@ import os
 import gc
 import sys
 import config
+import socket
 import uasyncio as asyncio
 from time import ticks_ms, ticks_diff
-from pillpilot_api import connect_wifi
 from espnow_link import espnow_init, espnow_mac
 from stepper_motor import stepper_init, stepper_next, stepper_stop
 from dispenser_controller import controller_init, controller_receive, controller_hall_online
@@ -78,38 +78,22 @@ async def main():
     motor = stepper_init()
     band_task = None
     try:
-        wifi = connect_wifi()
-        link, wifi = espnow_init(wifi)
+        link, wifi = espnow_init()
         state = controller_init()
 
         gc.collect()
         print("MEMORY|FREE", gc.mem_free())
 
-        for attempt in range(3):
-            print("BLE|STARTUP_ATTEMPT", attempt + 1)
-
-            result = await armband_command("BATTERY")
-
-            if result is not None:
-                break
-
-            gc.collect()
-            await asyncio.sleep(2)
-        else:
-            print("WARNING|ARMBAND_OFFLINE")
-
         band_task = asyncio.create_task(armband_loop())
-        print("MAIN|STARTED|MAC=" + espnow_mac(wifi))
-        print("MAIN|WIFI_CHANNEL=" + str(wifi.config("channel")))
 
         slot = 0
         last_time = None
 
         while True:
+            gc.collect()
+            print("MEMORY|FREE", gc.mem_free())
             controller_receive(link, state)
             state["events"].clear()
-            if not wifi.isconnected():
-                raise RuntimeError("WiFi disconnected")
             try:
                 async with radio_lock:
                     gc.collect()
@@ -117,6 +101,7 @@ async def main():
 
             except (OSError, MemoryError) as error:
                 print("ERROR|API_RETRY", repr(error))
+                gc.collect()
                 await asyncio.sleep(5)
                 continue
             if last_time is not None and now < last_time:
